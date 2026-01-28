@@ -11,6 +11,7 @@ import (
 
 	"epub-reader/pkg/analysis"
 	"epub-reader/pkg/epub"
+	"epub-reader/pkg/filter"
 	"epub-reader/pkg/markdown"
 	"epub-reader/pkg/storage"
 )
@@ -39,6 +40,10 @@ func main() {
 		authorsCmd(),
 		compareCmd(),
 		infoCmd(),
+		auditCmd(),
+		overruleCmd(),
+		rulesCmd(),
+		filterCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {
@@ -604,4 +609,393 @@ func sanitizeFilename(s string) string {
 	}
 
 	return strings.TrimSpace(s)
+}
+
+// auditCmd lists section decisions for a book.
+func auditCmd() *cobra.Command {
+	var showAll bool
+
+	cmd := &cobra.Command{
+		Use:   "audit <book-id>",
+		Short: "List section classification decisions for a book",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var bookID int64
+			if _, err := fmt.Sscanf(args[0], "%d", &bookID); err != nil {
+				return fmt.Errorf("invalid book ID: %s", args[0])
+			}
+
+			store, err := storage.NewSQLiteStore(dbPath)
+			if err != nil {
+				return fmt.Errorf("failed to open database: %w", err)
+			}
+			defer store.Close()
+
+			// Get book info
+			book, err := store.GetBook(bookID)
+			if err == storage.ErrNotFound {
+				return fmt.Errorf("book not found: %d", bookID)
+			}
+			if err != nil {
+				return err
+			}
+
+			fmt.Printf("Audit decisions for: %s\n", book.Title)
+			fmt.Println(strings.Repeat("=", 60))
+
+			// List decision audits
+			audits, err := store.ListDecisionAuditByBook(bookID)
+			if err != nil {
+				return err
+			}
+
+			if len(audits) == 0 {
+				fmt.Println("No LLM decisions recorded for this book.")
+				fmt.Println("Run 'epub-reader filter <book-id>' to classify sections.")
+				return nil
+			}
+
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "ID\tFile\tDecision\tVerified\tReason")
+			fmt.Fprintln(w, "--\t----\t--------\t--------\t------")
+
+			for _, audit := range audits {
+				if !showAll && audit.ManuallyVerified {
+					continue
+				}
+
+				verified := "No"
+				if audit.ManuallyVerified {
+					verified = "Yes"
+				}
+
+				reason := audit.Reason
+				if len(reason) > 40 {
+					reason = reason[:37] + "..."
+				}
+
+				fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n",
+					audit.ID,
+					truncateString(audit.FileName, 25),
+					audit.FinalDecision,
+					verified,
+					reason,
+				)
+			}
+			w.Flush()
+
+			// Show unverified count
+			unverified := 0
+			for _, a := range audits {
+				if !a.ManuallyVerified {
+					unverified++
+				}
+			}
+			if unverified > 0 {
+				fmt.Printf("\n%d unverified decisions. Use 'epub-reader overrule <id>' to flip decisions.\n", unverified)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&showAll, "all", false, "Show all decisions including verified ones")
+	return cmd
+}
+
+// overruleCmd flips a decision and marks it as verified.
+func overruleCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "overrule <decision-id>",
+		Short: "Flip a section decision (ALLOW<->DENY) and mark as verified",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var id int64
+			if _, err := fmt.Sscanf(args[0], "%d", &id); err != nil {
+				return fmt.Errorf("invalid decision ID: %s", args[0])
+			}
+
+			store, err := storage.NewSQLiteStore(dbPath)
+			if err != nil {
+				return fmt.Errorf("failed to open database: %w", err)
+			}
+			defer store.Close()
+
+			// Get current decision
+			audit, err := store.GetDecisionAudit(id)
+			if err == storage.ErrNotFound {
+				return fmt.Errorf("decision not found: %d", id)
+			}
+			if err != nil {
+				return err
+			}
+
+			// Flip and verify
+			updated, err := store.OverruleDecision(id)
+			if err != nil {
+				return err
+			}
+
+			fmt.Printf("Decision %d updated:\n", id)
+			fmt.Printf("  File: %s\n", audit.FileName)
+			fmt.Printf("  Old: %s -> New: %s\n", audit.FinalDecision, updated.FinalDecision)
+			fmt.Printf("  Marked as verified\n")
+
+			return nil
+		},
+	}
+}
+
+// rulesCmd manages section filtering rules.
+func rulesCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "rules",
+		Short: "Manage section filtering rules",
+	}
+
+	cmd.AddCommand(rulesListCmd(), rulesAddCmd(), rulesRemoveCmd())
+	return cmd
+}
+
+func rulesListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List all filtering rules",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			store, err := storage.NewSQLiteStore(dbPath)
+			if err != nil {
+				return fmt.Errorf("failed to open database: %w", err)
+			}
+			defer store.Close()
+
+			rules, err := store.ListSectionRules()
+			if err != nil {
+				return err
+			}
+
+			// Show built-in defaults first
+			fmt.Println("=== Built-in Allow Patterns ===")
+			for _, p := range filter.DefaultAllowList {
+				fmt.Printf("  %s\n", p)
+			}
+			fmt.Println()
+
+			fmt.Println("=== Built-in Deny Patterns ===")
+			for _, p := range filter.DefaultDenyList {
+				fmt.Printf("  %s\n", p)
+			}
+			fmt.Println()
+
+			if len(rules) == 0 {
+				fmt.Println("=== Custom Rules ===")
+				fmt.Println("  (none)")
+				return nil
+			}
+
+			fmt.Println("=== Custom Rules ===")
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "ID\tPattern\tDecision\tSource\tConfidence")
+			fmt.Fprintln(w, "--\t-------\t--------\t------\t----------")
+
+			for _, rule := range rules {
+				fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%.0f%%\n",
+					rule.ID,
+					rule.Pattern,
+					rule.Decision,
+					rule.Source,
+					rule.Confidence*100,
+				)
+			}
+			w.Flush()
+
+			return nil
+		},
+	}
+}
+
+func rulesAddCmd() *cobra.Command {
+	var confidence float64
+	var source string
+
+	cmd := &cobra.Command{
+		Use:   "add <pattern> <allow|deny>",
+		Short: "Add a custom filtering rule",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pattern := strings.ToLower(args[0])
+			decision := strings.ToUpper(args[1])
+
+			if decision != filter.DecisionAllow && decision != filter.DecisionDeny {
+				return fmt.Errorf("decision must be 'allow' or 'deny'")
+			}
+
+			store, err := storage.NewSQLiteStore(dbPath)
+			if err != nil {
+				return fmt.Errorf("failed to open database: %w", err)
+			}
+			defer store.Close()
+
+			rule, err := store.CreateSectionRule(pattern, decision, source, confidence)
+			if err != nil {
+				return err
+			}
+
+			fmt.Printf("Created rule %d: %s -> %s\n", rule.ID, pattern, decision)
+			return nil
+		},
+	}
+
+	cmd.Flags().Float64Var(&confidence, "confidence", 1.0, "Confidence level (0.0-1.0)")
+	cmd.Flags().StringVar(&source, "source", "manual", "Source of rule (manual, llm)")
+	return cmd
+}
+
+func rulesRemoveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "remove <rule-id>",
+		Short: "Remove a custom filtering rule",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var id int64
+			if _, err := fmt.Sscanf(args[0], "%d", &id); err != nil {
+				return fmt.Errorf("invalid rule ID: %s", args[0])
+			}
+
+			store, err := storage.NewSQLiteStore(dbPath)
+			if err != nil {
+				return fmt.Errorf("failed to open database: %w", err)
+			}
+			defer store.Close()
+
+			if err := store.DeleteSectionRule(id); err != nil {
+				return err
+			}
+
+			fmt.Printf("Removed rule %d\n", id)
+			return nil
+		},
+	}
+}
+
+// filterCmd filters an EPUB file and shows classification results.
+func filterCmd() *cobra.Command {
+	var useLLM bool
+	var storeSections bool
+
+	cmd := &cobra.Command{
+		Use:   "filter <epub-file-or-book-id>",
+		Short: "Filter EPUB sections and show classification results",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			store, err := storage.NewSQLiteStore(dbPath)
+			if err != nil {
+				return fmt.Errorf("failed to open database: %w", err)
+			}
+			defer store.Close()
+
+			// Create classifier
+			classifier := filter.NewClassifier(store)
+
+			// Optionally set up LLM engine
+			if useLLM {
+				engine, err := filter.NewClaudeEngine("")
+				if err != nil {
+					return fmt.Errorf("failed to create LLM engine: %w", err)
+				}
+				classifier.SetDecisionEngine(engine)
+				fmt.Println("LLM classification enabled (using Claude)")
+			}
+
+			// Determine if input is a file path or book ID
+			var book *epub.Book
+			var bookID int64
+
+			if _, err := fmt.Sscanf(args[0], "%d", &bookID); err == nil {
+				// It's a book ID - get path from database
+				storedBook, err := store.GetBook(bookID)
+				if err == storage.ErrNotFound {
+					return fmt.Errorf("book not found: %d", bookID)
+				}
+				if err != nil {
+					return err
+				}
+
+				book, err = epub.Parse(storedBook.Path)
+				if err != nil {
+					return fmt.Errorf("failed to parse EPUB: %w", err)
+				}
+			} else {
+				// It's a file path
+				book, err = epub.Parse(args[0])
+				if err != nil {
+					return fmt.Errorf("failed to parse EPUB: %w", err)
+				}
+			}
+
+			fmt.Printf("Filtering: %s\n", book.Title)
+			fmt.Println(strings.Repeat("=", 60))
+
+			// Filter the book
+			filtered := filter.FilterBook(book, classifier)
+
+			// Display results
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "Order\tFile\tType\tDecision\tConfidence\tReason")
+			fmt.Fprintln(w, "-----\t----\t----\t--------\t----------\t------")
+
+			for _, fc := range filtered.FilteredChapters {
+				reason := fc.Classification.Reason
+				if len(reason) > 30 {
+					reason = reason[:27] + "..."
+				}
+
+				epubType := fc.EpubType
+				if epubType == "" {
+					epubType = "-"
+				}
+
+				fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%.0f%%\t%s\n",
+					fc.Order+1,
+					truncateString(fc.Href, 25),
+					truncateString(epubType, 15),
+					fc.Classification.Decision,
+					fc.Classification.Confidence*100,
+					reason,
+				)
+			}
+			w.Flush()
+
+			// Show summary
+			summary := filtered.GetSummary()
+			fmt.Println()
+			fmt.Printf("Summary: %d total | %d allowed | %d denied | %d need LLM review\n",
+				summary.TotalChapters,
+				summary.AllowedCount,
+				summary.DeniedCount,
+				summary.NeedsLLMReview,
+			)
+
+			// Store sections if requested and we have a book ID
+			if storeSections && bookID > 0 {
+				if err := filter.StoreFilteredSections(filtered, bookID, store); err != nil {
+					return fmt.Errorf("failed to store sections: %w", err)
+				}
+				fmt.Printf("Stored %d sections to database\n", len(filtered.FilteredChapters))
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&useLLM, "llm", false, "Use LLM for ambiguous sections (requires ANTHROPIC_API_KEY)")
+	cmd.Flags().BoolVar(&storeSections, "store", false, "Store section classifications to database (requires book-id)")
+	return cmd
+}
+
+// truncateString truncates a string to max length with ellipsis.
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
 }
