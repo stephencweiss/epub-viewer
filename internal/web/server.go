@@ -139,17 +139,6 @@ func truncateString(s string, maxLen int) string {
 
 // Placeholder handlers (will be implemented in subsequent steps)
 
-func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, "<h1>Library</h1><p>TODO: Implement library view</p>")
-}
-
-func (s *Server) handleBookDetail(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(w, "<h1>Book %s</h1><p>TODO: Implement book detail view</p>", id)
-}
-
 func (s *Server) handleAuthors(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, "<h1>Authors</h1><p>TODO: Implement authors view</p>")

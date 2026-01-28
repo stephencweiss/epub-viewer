@@ -1,0 +1,66 @@
+{{define "book"}}
+{{template "base" .}}
+{{end}}
+
+{{define "title"}}{{.Book.Title}}{{end}}
+{{define "content"}}
+<hgroup>
+    <h1>{{.Book.Title}}</h1>
+    <p>by <a href="/authors/{{.Book.AuthorID}}">{{.Book.AuthorName}}</a></p>
+</hgroup>
+
+{{if .Analysis}}
+<div class="grid">
+    <article>
+        <h3>Word Analysis</h3>
+        <dl>
+            <dt>Total Words</dt>
+            <dd>{{.Analysis.TotalWords}}</dd>
+            <dt>Unique Words</dt>
+            <dd>{{.Analysis.UniqueWords}}</dd>
+            <dt>Vocabulary Richness</dt>
+            <dd>{{formatPercent .Analysis.VocabularyRich}}</dd>
+            <dt>Hapax Legomena</dt>
+            <dd>{{.Analysis.HapaxLegomena}}</dd>
+            <dt>Avg Word Length</dt>
+            <dd>{{formatFloat .Analysis.AvgWordLen 2}} chars</dd>
+        </dl>
+    </article>
+
+    <article>
+        <h3>Sentence Analysis</h3>
+        <dl>
+            <dt>Total Sentences</dt>
+            <dd>{{.Analysis.TotalSentences}}</dd>
+            <dt>Avg Sentence Length</dt>
+            <dd>{{formatFloat .Analysis.AvgSentenceLen 1}} words</dd>
+            <dt>Total Paragraphs</dt>
+            <dd>{{.Analysis.TotalParagraphs}}</dd>
+            <dt>Avg Paragraph Length</dt>
+            <dd>{{formatFloat .Analysis.AvgParagraphLen 1}} sentences</dd>
+        </dl>
+    </article>
+
+    <article>
+        <h3>Style Analysis</h3>
+        <dl>
+            <dt>Readability Score</dt>
+            <dd>{{formatFloat .Analysis.ReadabilityScore 1}}</dd>
+            <dt>Dialogue Ratio</dt>
+            <dd>{{formatPercent .Analysis.DialogueRatio}}</dd>
+            <dt>Total Syllables</dt>
+            <dd>{{.Analysis.TotalSyllables}}</dd>
+            <dt>Avg Syllables/Word</dt>
+            <dd>{{formatFloat .Analysis.AvgSyllables 2}}</dd>
+        </dl>
+    </article>
+</div>
+{{else}}
+<article>
+    <p>No analysis available. Run analysis from the CLI:</p>
+    <pre>epub-reader analyze {{.Book.ID}}</pre>
+</article>
+{{end}}
+
+<p><a href="/audit/book/{{.Book.ID}}">View section audit →</a></p>
+{{end}}

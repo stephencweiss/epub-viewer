@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(./epub-reader:*)",
-      "Bash(jj:*)"
+      "Bash(jj:*)",
+      "Bash(find:*)",
+      "Bash(mkdir:*)"
     ]
   }
 }
