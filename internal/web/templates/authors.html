@@ -1,0 +1,33 @@
+{{define "authors"}}
+{{template "base" .}}
+{{end}}
+
+{{define "title"}}Authors{{end}}
+{{define "content"}}
+<h1>Authors</h1>
+
+{{if .Authors}}
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Books</th>
+            <th>Total Words</th>
+            <th>Avg Readability</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{range .Authors}}
+        <tr>
+            <td><a href="/authors/{{.ID}}">{{.Name}}</a></td>
+            <td>{{if .Corpus}}{{.Corpus.BookCount}}{{else}}-{{end}}</td>
+            <td>{{if .Corpus}}{{.Corpus.TotalWords}}{{else}}-{{end}}</td>
+            <td>{{if .Corpus}}{{formatFloat .Corpus.AvgReadability 1}}{{else}}-{{end}}</td>
+        </tr>
+        {{end}}
+    </tbody>
+</table>
+{{else}}
+<p>No authors in the library yet.</p>
+{{end}}
+{{end}}

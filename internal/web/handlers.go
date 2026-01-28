@@ -62,3 +62,62 @@ func (s *Server) handleBookDetail(w http.ResponseWriter, r *http.Request) {
 		"Analysis": analysis,
 	})
 }
+
+// AuthorWithStats combines an author with their corpus analysis.
+type AuthorWithStats struct {
+	storage.Author
+	Corpus *storage.CorpusAnalysis
+}
+
+// handleAuthors renders the authors listing page.
+func (s *Server) handleAuthors(w http.ResponseWriter, r *http.Request) {
+	authors, err := s.store.ListAuthors()
+	if err != nil {
+		s.renderError(w, http.StatusInternalServerError, "Failed to load authors")
+		return
+	}
+
+	data := struct {
+		Authors []AuthorWithStats
+	}{
+		Authors: make([]AuthorWithStats, len(authors)),
+	}
+
+	for i, author := range authors {
+		corpus, _ := s.store.GetCorpusAnalysis(author.ID)
+		data.Authors[i] = AuthorWithStats{Author: author, Corpus: corpus}
+	}
+
+	s.render(w, "authors", data)
+}
+
+// handleAuthorDetail renders the detail page for a single author.
+func (s *Server) handleAuthorDetail(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		s.renderError(w, http.StatusBadRequest, "Invalid author ID")
+		return
+	}
+
+	author, err := s.store.GetAuthor(id)
+	if err != nil {
+		s.renderError(w, http.StatusNotFound, "Author not found")
+		return
+	}
+
+	corpus, _ := s.store.GetCorpusAnalysis(id)
+	books, _ := s.store.ListBooksByAuthor(id)
+
+	// Attach analysis to each book
+	booksWithAnalysis := make([]BookWithAnalysis, len(books))
+	for i, book := range books {
+		analysis, _ := s.store.GetAnalysis(book.ID)
+		booksWithAnalysis[i] = BookWithAnalysis{Book: book, Analysis: analysis}
+	}
+
+	s.render(w, "author", map[string]any{
+		"Author": author,
+		"Corpus": corpus,
+		"Books":  booksWithAnalysis,
+	})
+}

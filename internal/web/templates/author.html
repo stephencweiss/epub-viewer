@@ -1,0 +1,68 @@
+{{define "author"}}
+{{template "base" .}}
+{{end}}
+
+{{define "title"}}{{.Author.Name}}{{end}}
+{{define "content"}}
+<h1>{{.Author.Name}}</h1>
+
+{{if .Corpus}}
+<div class="grid">
+    <article>
+        <h3>Corpus Overview</h3>
+        <dl>
+            <dt>Books</dt>
+            <dd>{{.Corpus.BookCount}}</dd>
+            <dt>Total Words</dt>
+            <dd>{{.Corpus.TotalWords}}</dd>
+            <dt>Total Unique Words</dt>
+            <dd>{{.Corpus.TotalUniqueWords}}</dd>
+        </dl>
+    </article>
+
+    <article>
+        <h3>Average Metrics</h3>
+        <dl>
+            <dt>Vocabulary Richness</dt>
+            <dd>{{formatPercent .Corpus.AvgVocabularyRich}}</dd>
+            <dt>Readability Score</dt>
+            <dd>{{formatFloat .Corpus.AvgReadability 1}}</dd>
+            <dt>Sentence Length</dt>
+            <dd>{{formatFloat .Corpus.AvgSentenceLen 1}} words</dd>
+            <dt>Word Length</dt>
+            <dd>{{formatFloat .Corpus.AvgWordLen 2}} chars</dd>
+            <dt>Dialogue Ratio</dt>
+            <dd>{{formatPercent .Corpus.AvgDialogueRatio}}</dd>
+        </dl>
+    </article>
+</div>
+
+<p><a href="/compare?author1={{.Author.ID}}">Compare with another author →</a></p>
+{{else}}
+<p>No analysis data available for this author.</p>
+{{end}}
+
+<h2>Books</h2>
+{{if .Books}}
+<table>
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Words</th>
+            <th>Readability</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{range .Books}}
+        <tr>
+            <td><a href="/books/{{.ID}}">{{.Title}}</a></td>
+            <td>{{if .Analysis}}{{.Analysis.TotalWords}}{{else}}-{{end}}</td>
+            <td>{{if .Analysis}}{{formatFloat .Analysis.ReadabilityScore 1}}{{else}}-{{end}}</td>
+        </tr>
+        {{end}}
+    </tbody>
+</table>
+{{else}}
+<p>No books by this author.</p>
+{{end}}
+{{end}}
