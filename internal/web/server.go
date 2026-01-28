@@ -137,9 +137,3 @@ func truncateString(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
-// Placeholder handlers (will be implemented in subsequent steps)
-
-func (s *Server) handleCompare(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, "<h1>Compare</h1><p>TODO: Implement compare view</p>")
-}

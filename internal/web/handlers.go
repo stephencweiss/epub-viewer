@@ -183,3 +183,27 @@ func (s *Server) handleOverrule(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to render row", http.StatusInternalServerError)
 	}
 }
+
+// handleCompare renders the author comparison page with radar chart.
+func (s *Server) handleCompare(w http.ResponseWriter, r *http.Request) {
+	authors, err := s.store.ListAuthors()
+	if err != nil {
+		s.renderError(w, http.StatusInternalServerError, "Failed to load authors")
+		return
+	}
+
+	// Pre-select from query params if provided
+	var author1ID, author2ID int64
+	if v := r.URL.Query().Get("author1"); v != "" {
+		author1ID, _ = strconv.ParseInt(v, 10, 64)
+	}
+	if v := r.URL.Query().Get("author2"); v != "" {
+		author2ID, _ = strconv.ParseInt(v, 10, 64)
+	}
+
+	s.render(w, "compare", map[string]any{
+		"Authors":   authors,
+		"Author1ID": author1ID,
+		"Author2ID": author2ID,
+	})
+}

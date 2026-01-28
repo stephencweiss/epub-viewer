@@ -1,0 +1,47 @@
+{{define "compare"}}
+{{template "base" .}}
+{{end}}
+
+{{define "title"}}Compare Authors{{end}}
+{{define "content"}}
+<h1>Compare Authors</h1>
+
+<form hx-get="/compare" hx-target="body" hx-push-url="true">
+    <fieldset role="group">
+        <select name="author1" required>
+            <option value="">Select Author 1</option>
+            {{range .Authors}}
+            <option value="{{.ID}}" {{if eq .ID $.Author1ID}}selected{{end}}>{{.Name}}</option>
+            {{end}}
+        </select>
+        <select name="author2" required>
+            <option value="">Select Author 2</option>
+            {{range .Authors}}
+            <option value="{{.ID}}" {{if eq .ID $.Author2ID}}selected{{end}}>{{.Name}}</option>
+            {{end}}
+        </select>
+        <button type="submit">Compare</button>
+    </fieldset>
+</form>
+
+{{if and .Author1ID .Author2ID}}
+<article>
+    <canvas id="radarChart" style="max-width: 600px; margin: 0 auto;"></canvas>
+</article>
+{{end}}
+{{end}}
+
+{{define "head"}}
+{{if and .Author1ID .Author2ID}}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{{end}}
+{{end}}
+
+{{define "scripts"}}
+{{if and .Author1ID .Author2ID}}
+<script src="/static/js/charts.js"></script>
+<script>
+    loadRadarChart('radarChart', '/api/compare?author1={{.Author1ID}}&author2={{.Author2ID}}');
+</script>
+{{end}}
+{{end}}
