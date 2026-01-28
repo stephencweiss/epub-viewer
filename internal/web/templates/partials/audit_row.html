@@ -11,7 +11,13 @@
     <td>{{truncate .Reason 50}}</td>
     <td>
         {{if not .ManuallyVerified}}
-        <button disabled>Overrule</button>
+        <button
+            hx-post="/audit/{{.ID}}/overrule"
+            hx-target="#audit-{{.ID}}"
+            hx-swap="outerHTML"
+            hx-confirm="Flip decision from {{.FinalDecision}}?">
+            Overrule
+        </button>
         {{else}}
         <small>Verified</small>
         {{end}}

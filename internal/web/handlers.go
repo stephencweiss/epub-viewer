@@ -162,3 +162,24 @@ func (s *Server) handleBookAudit(w http.ResponseWriter, r *http.Request) {
 		"Title":     "Audit: " + book.Title,
 	})
 }
+
+// handleOverrule flips a decision and returns the updated row for HTMX.
+func (s *Server) handleOverrule(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid decision ID", http.StatusBadRequest)
+		return
+	}
+
+	updated, err := s.store.OverruleDecision(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Return just the updated row partial for HTMX swap
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.templates.ExecuteTemplate(w, "audit_row", updated); err != nil {
+		http.Error(w, "Failed to render row", http.StatusInternalServerError)
+	}
+}

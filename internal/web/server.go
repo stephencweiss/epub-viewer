@@ -139,12 +139,6 @@ func truncateString(s string, maxLen int) string {
 
 // Placeholder handlers (will be implemented in subsequent steps)
 
-func (s *Server) handleOverrule(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(w, "<p>TODO: Overrule decision %s</p>", id)
-}
-
 func (s *Server) handleCompare(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, "<h1>Compare</h1><p>TODO: Implement compare view</p>")
