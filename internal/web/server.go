@@ -143,13 +143,3 @@ func (s *Server) handleCompare(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, "<h1>Compare</h1><p>TODO: Implement compare view</p>")
 }
-
-func (s *Server) apiAuthorMetrics(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprint(w, `{"error": "TODO: Implement author metrics API"}`)
-}
-
-func (s *Server) apiCompare(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprint(w, `{"error": "TODO: Implement compare API"}`)
-}
