@@ -110,13 +110,20 @@ func extractChapters(zr *zip.ReadCloser, manifest Manifest, spine Spine, basePat
 		title := extractChapterTitle(contentStr)
 		text := extractText(contentStr)
 
+		// Extract epub:type from content or manifest properties
+		epubType := extractEpubType(contentStr)
+		if epubType == "" {
+			epubType = item.Properties
+		}
+
 		chapter := Chapter{
-			ID:      item.ID,
-			Title:   title,
-			Href:    item.Href,
-			Content: contentStr,
-			Text:    text,
-			Order:   i,
+			ID:       item.ID,
+			Title:    title,
+			Href:     item.Href,
+			Content:  contentStr,
+			Text:     text,
+			EpubType: epubType,
+			Order:    i,
 		}
 
 		chapters = append(chapters, chapter)

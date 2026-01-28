@@ -36,9 +36,10 @@ type manifestOPF struct {
 }
 
 type manifestItemOPF struct {
-	ID        string `xml:"id,attr"`
-	Href      string `xml:"href,attr"`
-	MediaType string `xml:"media-type,attr"`
+	ID         string `xml:"id,attr"`
+	Href       string `xml:"href,attr"`
+	MediaType  string `xml:"media-type,attr"`
+	Properties string `xml:"properties,attr"`
 }
 
 type spineOPF struct {
@@ -133,9 +134,10 @@ func buildManifest(pkg *packageOPF) Manifest {
 	}
 	for i, item := range pkg.Manifest.Items {
 		m.Items[i] = ManifestItem{
-			ID:        item.ID,
-			Href:      item.Href,
-			MediaType: item.MediaType,
+			ID:         item.ID,
+			Href:       item.Href,
+			MediaType:  item.MediaType,
+			Properties: item.Properties,
 		}
 	}
 	return m

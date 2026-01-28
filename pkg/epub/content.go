@@ -176,5 +176,42 @@ func isContentType(mediaType string) bool {
 		mediaType == "application/x-dtbncx+xml"
 }
 
+// extractEpubType extracts the epub:type attribute from XHTML content.
+// It looks for epub:type on body, section, or article elements.
+func extractEpubType(xhtmlContent string) string {
+	doc, err := html.Parse(strings.NewReader(xhtmlContent))
+	if err != nil {
+		return ""
+	}
+
+	epubType := findEpubType(doc)
+	return epubType
+}
+
+// findEpubType recursively searches for epub:type attribute.
+func findEpubType(n *html.Node) string {
+	if n.Type == html.ElementNode {
+		// Check elements that commonly have epub:type
+		switch n.Data {
+		case "body", "section", "article", "div", "nav", "aside":
+			for _, attr := range n.Attr {
+				// epub:type can be namespaced or not
+				if attr.Key == "epub:type" || attr.Key == "type" && attr.Namespace == "http://www.idpf.org/2007/ops" {
+					return attr.Val
+				}
+			}
+		}
+	}
+
+	// Search children
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if epubType := findEpubType(c); epubType != "" {
+			return epubType
+		}
+	}
+
+	return ""
+}
+
 // Discard variable for io.Copy operations
 var _ = io.Discard

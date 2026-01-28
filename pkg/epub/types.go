@@ -27,6 +27,7 @@ type Chapter struct {
 	Href     string
 	Content  string // Raw XHTML content
 	Text     string // Plain text (HTML stripped)
+	EpubType string // epub:type attribute (e.g., "chapter", "frontmatter")
 	Order    int
 }
 
@@ -37,9 +38,10 @@ type Manifest struct {
 
 // ManifestItem represents a single resource in the EPUB.
 type ManifestItem struct {
-	ID        string
-	Href      string
-	MediaType string
+	ID         string
+	Href       string
+	MediaType  string
+	Properties string // EPUB 3 properties (e.g., "nav", "cover-image")
 }
 
 // Spine represents the reading order of the EPUB.
