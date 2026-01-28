@@ -125,3 +125,41 @@ type ComparisonResult struct {
 	WordLenDiff       float64
 	DialogueRatioDiff float64
 }
+
+// SectionRule represents a persistent allow/deny rule for section filtering.
+type SectionRule struct {
+	ID         int64
+	Pattern    string  // Filename pattern or epub:type value
+	Decision   string  // "ALLOW" or "DENY"
+	Confidence float64 // 0.0-1.0, higher = more certain
+	Source     string  // "manual", "llm", "default"
+	CreatedAt  time.Time
+}
+
+// DecisionAudit stores LLM decisions for evaluation and transparency.
+type DecisionAudit struct {
+	ID               int64
+	BookID           int64
+	FileName         string
+	EpubType         string // epub:type attribute if present
+	TextSnippet      string // First ~500 chars sent to LLM
+	LLMPrompt        string // Full prompt for reproducibility
+	LLMResponse      string // Raw LLM response
+	FinalDecision    string // "ALLOW" or "DENY"
+	Reason           string // LLM's reasoning
+	ManuallyVerified bool   // Has a human reviewed this?
+	CreatedAt        time.Time
+}
+
+// Section represents an individual content section from an EPUB.
+type Section struct {
+	ID          int64
+	BookID      int64
+	FileName    string
+	EpubType    string // epub:type attribute
+	Title       string
+	TextContent string // Full text content
+	Status      string // "ALLOW", "DENY", "PENDING"
+	Order       int    // Reading order from spine
+	CreatedAt   time.Time
+}
