@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
-	"path/filepath"
 
 	"epub-reader/pkg/storage"
 )
@@ -53,14 +52,8 @@ func (s *Server) loadTemplates() error {
 		return fmt.Errorf("failed to parse templates: %w", err)
 	}
 
-	// Parse partials
-	tmpl, err = tmpl.ParseGlob("internal/web/templates/partials/*.html")
-	if err != nil {
-		// Partials might not exist yet, which is okay
-		if !filepath.IsAbs(err.Error()) {
-			// Ignore glob errors for missing partials directory
-		}
-	}
+	// Parse partials (ignore errors if directory is empty)
+	tmpl, _ = tmpl.ParseGlob("internal/web/templates/partials/*.html")
 
 	s.templates = tmpl
 	return nil
