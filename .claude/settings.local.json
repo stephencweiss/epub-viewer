@@ -4,7 +4,10 @@
       "Bash(./epub-reader:*)",
       "Bash(jj:*)",
       "Bash(find:*)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(curl:*)",
+      "Bash(cat:*)",
+      "Bash(lsof:*)"
     ]
   }
 }

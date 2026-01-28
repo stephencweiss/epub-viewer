@@ -178,8 +178,9 @@ func (s *Server) handleOverrule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Return just the updated row partial for HTMX swap
+	// Use the audit template set which has the audit_row partial
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.templates.ExecuteTemplate(w, "audit_row", updated); err != nil {
+	if err := s.templates["audit"].ExecuteTemplate(w, "audit_row", updated); err != nil {
 		http.Error(w, "Failed to render row", http.StatusInternalServerError)
 	}
 }

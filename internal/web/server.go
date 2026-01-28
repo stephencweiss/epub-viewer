@@ -12,7 +12,7 @@ import (
 type Server struct {
 	store     *storage.SQLiteStore
 	mux       *http.ServeMux
-	templates *template.Template
+	templates map[string]*template.Template // One template set per page
 	staticDir string
 }
 
@@ -39,6 +39,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // loadTemplates loads and parses all HTML templates.
+// Each page template gets its own template set to avoid namespace conflicts.
 func (s *Server) loadTemplates() error {
 	funcMap := template.FuncMap{
 		"formatPercent": formatPercent,
@@ -46,16 +47,42 @@ func (s *Server) loadTemplates() error {
 		"truncate":      truncateString,
 	}
 
-	// Parse base templates
-	tmpl, err := template.New("").Funcs(funcMap).ParseGlob("internal/web/templates/*.html")
+	// Parse base template and partials first
+	base, err := template.New("").Funcs(funcMap).ParseFiles(
+		"internal/web/templates/base.html",
+	)
 	if err != nil {
-		return fmt.Errorf("failed to parse templates: %w", err)
+		return fmt.Errorf("failed to parse base template: %w", err)
 	}
 
-	// Parse partials (ignore errors if directory is empty)
-	tmpl, _ = tmpl.ParseGlob("internal/web/templates/partials/*.html")
+	// Add partials to base
+	base, err = base.ParseGlob("internal/web/templates/partials/*.html")
+	if err != nil {
+		return fmt.Errorf("failed to parse partials: %w", err)
+	}
 
-	s.templates = tmpl
+	// Page templates that need their own namespace
+	pages := []string{"library", "book", "authors", "author", "audit", "compare", "error"}
+	s.templates = make(map[string]*template.Template)
+
+	for _, page := range pages {
+		// Clone the base template
+		pageTemplate, err := base.Clone()
+		if err != nil {
+			return fmt.Errorf("failed to clone base for %s: %w", page, err)
+		}
+
+		// Parse the page-specific template into the cloned set
+		pageTemplate, err = pageTemplate.ParseFiles(
+			fmt.Sprintf("internal/web/templates/%s.html", page),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to parse %s template: %w", page, err)
+		}
+
+		s.templates[page] = pageTemplate
+	}
+
 	return nil
 }
 
@@ -88,8 +115,14 @@ func (s *Server) registerRoutes() {
 
 // render executes a template and writes the response.
 func (s *Server) render(w http.ResponseWriter, name string, data any) {
+	tmpl, ok := s.templates[name]
+	if !ok {
+		http.Error(w, "Template not found", http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.templates.ExecuteTemplate(w, name, data); err != nil {
+	if err := tmpl.ExecuteTemplate(w, name, data); err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
 }
