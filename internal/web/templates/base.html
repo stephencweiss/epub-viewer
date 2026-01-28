@@ -1,0 +1,32 @@
+{{define "base"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{template "title" .}} - EPUB Library</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <style>
+        .allow { background: #d4edda; }
+        .deny { background: #f8d7da; }
+        .htmx-indicator { display: none; }
+        .htmx-request .htmx-indicator { display: inline; }
+        .htmx-request.htmx-indicator { display: inline; }
+    </style>
+    {{block "head" .}}{{end}}
+</head>
+<body>
+    <header class="container">
+        {{template "nav" .}}
+    </header>
+    <main class="container">
+        {{template "content" .}}
+    </main>
+    <footer class="container">
+        <small>EPUB Reader Dashboard</small>
+    </footer>
+    {{block "scripts" .}}{{end}}
+</body>
+</html>
+{{end}}

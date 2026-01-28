@@ -1,0 +1,12 @@
+{{define "error"}}
+{{template "base" .}}
+{{end}}
+
+{{define "title"}}Error{{end}}
+{{define "content"}}
+<article>
+    <h1>{{.Code}} - {{.Title}}</h1>
+    <p>{{.Message}}</p>
+    <a href="/">← Back to Library</a>
+</article>
+{{end}}
