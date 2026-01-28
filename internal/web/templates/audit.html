@@ -1,0 +1,34 @@
+{{define "audit"}}
+{{template "base" .}}
+{{end}}
+
+{{define "title"}}{{.Title}}{{end}}
+{{define "content"}}
+<h1>{{.Title}}</h1>
+
+{{if .Book}}
+<p><a href="/books/{{.Book.ID}}">← Back to {{.Book.Title}}</a></p>
+{{end}}
+
+{{if .Decisions}}
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>File</th>
+            <th>Decision</th>
+            <th>Verified</th>
+            <th>Reason</th>
+            <th>Action</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{range .Decisions}}
+        {{template "audit_row" .}}
+        {{end}}
+    </tbody>
+</table>
+{{else}}
+<p>No decisions to audit.</p>
+{{end}}
+{{end}}

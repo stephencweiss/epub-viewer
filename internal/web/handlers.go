@@ -121,3 +121,44 @@ func (s *Server) handleAuthorDetail(w http.ResponseWriter, r *http.Request) {
 		"Books":  booksWithAnalysis,
 	})
 }
+
+// handleAuditList renders the list of unverified decisions.
+func (s *Server) handleAuditList(w http.ResponseWriter, r *http.Request) {
+	decisions, err := s.store.ListUnverifiedDecisions()
+	if err != nil {
+		s.renderError(w, http.StatusInternalServerError, "Failed to load decisions")
+		return
+	}
+
+	s.render(w, "audit", map[string]any{
+		"Decisions": decisions,
+		"Title":     "Unverified Decisions",
+	})
+}
+
+// handleBookAudit renders the decisions for a specific book.
+func (s *Server) handleBookAudit(w http.ResponseWriter, r *http.Request) {
+	bookID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		s.renderError(w, http.StatusBadRequest, "Invalid book ID")
+		return
+	}
+
+	book, err := s.store.GetBook(bookID)
+	if err != nil {
+		s.renderError(w, http.StatusNotFound, "Book not found")
+		return
+	}
+
+	decisions, err := s.store.ListDecisionAuditByBook(bookID)
+	if err != nil {
+		s.renderError(w, http.StatusInternalServerError, "Failed to load decisions")
+		return
+	}
+
+	s.render(w, "audit", map[string]any{
+		"Decisions": decisions,
+		"Book":      book,
+		"Title":     "Audit: " + book.Title,
+	})
+}

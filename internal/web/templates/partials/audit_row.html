@@ -1,0 +1,20 @@
+{{define "audit_row"}}
+<tr id="audit-{{.ID}}">
+    <td>{{.ID}}</td>
+    <td>{{truncate .FileName 30}}</td>
+    <td>
+        <mark {{if eq .FinalDecision "ALLOW"}}class="allow"{{else}}class="deny"{{end}}>
+            {{.FinalDecision}}
+        </mark>
+    </td>
+    <td>{{if .ManuallyVerified}}✓{{else}}—{{end}}</td>
+    <td>{{truncate .Reason 50}}</td>
+    <td>
+        {{if not .ManuallyVerified}}
+        <button disabled>Overrule</button>
+        {{else}}
+        <small>Verified</small>
+        {{end}}
+    </td>
+</tr>
+{{end}}
