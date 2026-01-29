@@ -111,6 +111,8 @@ func (s *Server) handleAuthorDetail(w http.ResponseWriter, r *http.Request) {
 
 	corpus, _ := s.store.GetCorpusAnalysis(id)
 	books, _ := s.store.ListBooksByAuthor(id)
+	allAuthors, _ := s.store.ListAuthors()
+	bookCount, _ := s.store.CountBooksByAuthor(id)
 
 	// Attach analysis to each book
 	booksWithAnalysis := make([]BookWithAnalysis, len(books))
@@ -120,9 +122,11 @@ func (s *Server) handleAuthorDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, "author", map[string]any{
-		"Author": author,
-		"Corpus": corpus,
-		"Books":  booksWithAnalysis,
+		"Author":     author,
+		"Corpus":     corpus,
+		"Books":      booksWithAnalysis,
+		"AllAuthors": allAuthors,
+		"BookCount":  bookCount,
 	})
 }
 
@@ -310,5 +314,78 @@ func (s *Server) handleReassignBook(w http.ResponseWriter, r *http.Request) {
 
 	// Redirect back to book page
 	w.Header().Set("HX-Redirect", "/books/"+strconv.FormatInt(bookID, 10))
+	w.WriteHeader(http.StatusOK)
+}
+
+// handleRenameAuthor renames an author (HTMX).
+func (s *Server) handleRenameAuthor(w http.ResponseWriter, r *http.Request) {
+	authorID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid author ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	newName := strings.TrimSpace(r.FormValue("name"))
+	if newName == "" {
+		http.Error(w, "Name cannot be empty", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.store.RenameAuthor(authorID, newName); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("HX-Redirect", "/authors/"+strconv.FormatInt(authorID, 10))
+	w.WriteHeader(http.StatusOK)
+}
+
+// handleDeleteAuthor deletes an author with no books (HTMX).
+func (s *Server) handleDeleteAuthor(w http.ResponseWriter, r *http.Request) {
+	authorID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid author ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.store.DeleteAuthor(authorID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("HX-Redirect", "/authors")
+	w.WriteHeader(http.StatusOK)
+}
+
+// handleMergeAuthors merges two authors (HTMX).
+func (s *Server) handleMergeAuthors(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	sourceID, err := strconv.ParseInt(r.FormValue("source_id"), 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid source author ID", http.StatusBadRequest)
+		return
+	}
+
+	targetID, err := strconv.ParseInt(r.FormValue("target_id"), 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid target author ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.store.MergeAuthors(sourceID, targetID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("HX-Redirect", "/authors/"+strconv.FormatInt(targetID, 10))
 	w.WriteHeader(http.StatusOK)
 }

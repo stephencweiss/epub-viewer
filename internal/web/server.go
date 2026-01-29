@@ -103,6 +103,9 @@ func (s *Server) registerRoutes() {
 	// Author views
 	s.mux.HandleFunc("GET /authors", s.handleAuthors)
 	s.mux.HandleFunc("GET /authors/{id}", s.handleAuthorDetail)
+	s.mux.HandleFunc("POST /authors/{id}/rename", s.handleRenameAuthor)
+	s.mux.HandleFunc("POST /authors/{id}/delete", s.handleDeleteAuthor)
+	s.mux.HandleFunc("POST /authors/merge", s.handleMergeAuthors)
 
 	// Audit views
 	s.mux.HandleFunc("GET /audit", s.handleAuditList)
