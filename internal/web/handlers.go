@@ -58,10 +58,12 @@ func (s *Server) handleBookDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	analysis, _ := s.store.GetAnalysis(id)
+	authors, _ := s.store.ListAuthors()
 
 	s.render(w, "book", map[string]any{
 		"Book":     book,
 		"Analysis": analysis,
+		"Authors":  authors,
 	})
 }
 
@@ -280,4 +282,33 @@ func (s *Server) handleChapterContent(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		http.Error(w, "Failed to render chapter", http.StatusInternalServerError)
 	}
+}
+
+// handleReassignBook moves a book to a different author (HTMX).
+func (s *Server) handleReassignBook(w http.ResponseWriter, r *http.Request) {
+	bookID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid book ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	newAuthorID, err := strconv.ParseInt(r.FormValue("author_id"), 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid author ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.store.ReassignBook(bookID, newAuthorID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Redirect back to book page
+	w.Header().Set("HX-Redirect", "/books/"+strconv.FormatInt(bookID, 10))
+	w.WriteHeader(http.StatusOK)
 }

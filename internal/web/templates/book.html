@@ -9,6 +9,11 @@
     <p>by <a href="/authors/{{.Book.AuthorID}}">{{.Book.AuthorName}}</a></p>
 </hgroup>
 
+<p>
+    <a href="/books/{{.Book.ID}}/read" role="button">Read Book</a>
+    <a href="/audit/book/{{.Book.ID}}" role="button" class="secondary">View Section Audit</a>
+</p>
+
 {{if .Analysis}}
 <div class="grid">
     <article>
@@ -62,5 +67,19 @@
 </article>
 {{end}}
 
-<p><a href="/audit/book/{{.Book.ID}}">View section audit →</a></p>
+<details>
+    <summary>Manage Book</summary>
+    <article>
+        <h4>Reassign to Different Author</h4>
+        <form hx-post="/books/{{.Book.ID}}/reassign" hx-swap="none">
+            <label for="author_id">New Author</label>
+            <select name="author_id" id="author_id" required>
+                {{range .Authors}}
+                <option value="{{.ID}}" {{if eq .ID $.Book.AuthorID}}selected{{end}}>{{.Name}}</option>
+                {{end}}
+            </select>
+            <button type="submit">Reassign</button>
+        </form>
+    </article>
+</details>
 {{end}}
