@@ -45,6 +45,8 @@ func main() {
 		rulesCmd(),
 		filterCmd(),
 		readCmd(),
+		reassignCmd(),
+		authorCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {
@@ -769,6 +771,209 @@ By default, shows the chapter list. Use flags to view content:
 	cmd.Flags().BoolVarP(&showText, "text", "t", false, "Show all text content")
 	cmd.Flags().IntVar(&maxChars, "max-chars", 10000, "Maximum characters to show with --text")
 	return cmd
+}
+
+// reassignCmd moves a book to a different author.
+func reassignCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "reassign <book-id> <author-id>",
+		Short: "Move a book to a different author",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var bookID, authorID int64
+			if _, err := fmt.Sscanf(args[0], "%d", &bookID); err != nil {
+				return fmt.Errorf("invalid book ID: %s", args[0])
+			}
+			if _, err := fmt.Sscanf(args[1], "%d", &authorID); err != nil {
+				return fmt.Errorf("invalid author ID: %s", args[1])
+			}
+
+			store, err := storage.NewSQLiteStore(dbPath)
+			if err != nil {
+				return fmt.Errorf("failed to open database: %w", err)
+			}
+			defer store.Close()
+
+			// Get book and author info for confirmation
+			book, err := store.GetBook(bookID)
+			if err == storage.ErrNotFound {
+				return fmt.Errorf("book not found: %d", bookID)
+			}
+			if err != nil {
+				return err
+			}
+
+			newAuthor, err := store.GetAuthor(authorID)
+			if err == storage.ErrNotFound {
+				return fmt.Errorf("author not found: %d", authorID)
+			}
+			if err != nil {
+				return err
+			}
+
+			oldAuthorName := book.AuthorName
+
+			if err := store.ReassignBook(bookID, authorID); err != nil {
+				return err
+			}
+
+			fmt.Printf("Reassigned: %s\n", book.Title)
+			fmt.Printf("  From: %s\n", oldAuthorName)
+			fmt.Printf("  To: %s\n", newAuthor.Name)
+
+			return nil
+		},
+	}
+}
+
+// authorCmd manages authors.
+func authorCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "author",
+		Short: "Manage authors",
+	}
+
+	cmd.AddCommand(authorMergeCmd(), authorDeleteCmd(), authorRenameCmd())
+	return cmd
+}
+
+func authorMergeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "merge <from-id> <to-id>",
+		Short: "Merge authors: move all books from source to target, delete source",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var fromID, toID int64
+			if _, err := fmt.Sscanf(args[0], "%d", &fromID); err != nil {
+				return fmt.Errorf("invalid source author ID: %s", args[0])
+			}
+			if _, err := fmt.Sscanf(args[1], "%d", &toID); err != nil {
+				return fmt.Errorf("invalid target author ID: %s", args[1])
+			}
+
+			store, err := storage.NewSQLiteStore(dbPath)
+			if err != nil {
+				return fmt.Errorf("failed to open database: %w", err)
+			}
+			defer store.Close()
+
+			// Get author info for confirmation
+			fromAuthor, err := store.GetAuthor(fromID)
+			if err == storage.ErrNotFound {
+				return fmt.Errorf("source author not found: %d", fromID)
+			}
+			if err != nil {
+				return err
+			}
+
+			toAuthor, err := store.GetAuthor(toID)
+			if err == storage.ErrNotFound {
+				return fmt.Errorf("target author not found: %d", toID)
+			}
+			if err != nil {
+				return err
+			}
+
+			// Get book count for summary
+			bookCount, _ := store.CountBooksByAuthor(fromID)
+
+			if err := store.MergeAuthors(fromID, toID); err != nil {
+				return err
+			}
+
+			fmt.Printf("Merged authors:\n")
+			fmt.Printf("  Source: %s (ID: %d) - deleted\n", fromAuthor.Name, fromID)
+			fmt.Printf("  Target: %s (ID: %d)\n", toAuthor.Name, toID)
+			fmt.Printf("  Books moved: %d\n", bookCount)
+
+			return nil
+		},
+	}
+}
+
+func authorDeleteCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "delete <author-id>",
+		Short: "Delete an author (must have no books)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var id int64
+			if _, err := fmt.Sscanf(args[0], "%d", &id); err != nil {
+				return fmt.Errorf("invalid author ID: %s", args[0])
+			}
+
+			store, err := storage.NewSQLiteStore(dbPath)
+			if err != nil {
+				return fmt.Errorf("failed to open database: %w", err)
+			}
+			defer store.Close()
+
+			// Get author info for confirmation
+			author, err := store.GetAuthor(id)
+			if err == storage.ErrNotFound {
+				return fmt.Errorf("author not found: %d", id)
+			}
+			if err != nil {
+				return err
+			}
+
+			if err := store.DeleteAuthor(id); err != nil {
+				if err == storage.ErrAuthorHasBooks {
+					count, _ := store.CountBooksByAuthor(id)
+					return fmt.Errorf("cannot delete author '%s': has %d book(s). Use 'author merge' or 'reassign' first", author.Name, count)
+				}
+				return err
+			}
+
+			fmt.Printf("Deleted author: %s (ID: %d)\n", author.Name, id)
+			return nil
+		},
+	}
+}
+
+func authorRenameCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "rename <author-id> <new-name>",
+		Short: "Rename an author",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var id int64
+			if _, err := fmt.Sscanf(args[0], "%d", &id); err != nil {
+				return fmt.Errorf("invalid author ID: %s", args[0])
+			}
+			newName := args[1]
+
+			store, err := storage.NewSQLiteStore(dbPath)
+			if err != nil {
+				return fmt.Errorf("failed to open database: %w", err)
+			}
+			defer store.Close()
+
+			// Get old name for confirmation
+			author, err := store.GetAuthor(id)
+			if err == storage.ErrNotFound {
+				return fmt.Errorf("author not found: %d", id)
+			}
+			if err != nil {
+				return err
+			}
+
+			oldName := author.Name
+
+			if err := store.RenameAuthor(id, newName); err != nil {
+				if err == storage.ErrAlreadyExists {
+					return fmt.Errorf("an author with name '%s' already exists", newName)
+				}
+				return err
+			}
+
+			fmt.Printf("Renamed author:\n")
+			fmt.Printf("  Old: %s\n", oldName)
+			fmt.Printf("  New: %s\n", newName)
+
+			return nil
+		},
+	}
 }
 
 // findAuthor finds an author by name or similar.
