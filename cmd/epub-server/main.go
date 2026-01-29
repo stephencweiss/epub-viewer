@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -35,19 +36,46 @@ func main() {
 		log.Fatalf("Failed to create server: %v", err)
 	}
 
-	// Set up HTTP server
-	addr := fmt.Sprintf(":%d", *port)
-	httpServer := &http.Server{
-		Addr:         addr,
-		Handler:      server,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+	// Try to find an available port
+	var httpServer *http.Server
+	var actualPort int
+	maxAttempts := 10
+	
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		tryPort := *port + attempt
+		addr := fmt.Sprintf(":%d", tryPort)
+		
+		httpServer = &http.Server{
+			Addr:         addr,
+			Handler:      server,
+			ReadTimeout:  15 * time.Second,
+			WriteTimeout: 15 * time.Second,
+			IdleTimeout:  60 * time.Second,
+		}
+		
+		// Test if port is available
+		listener, err := net.Listen("tcp", addr)
+		if err != nil {
+			if attempt < maxAttempts-1 {
+				log.Printf("Port %d is busy, trying %d...", tryPort, tryPort+1)
+				continue
+			}
+			log.Fatalf("Could not find available port after %d attempts (tried %d-%d)", maxAttempts, *port, *port+maxAttempts-1)
+		}
+		
+		// Port is available, close test listener
+		listener.Close()
+		actualPort = tryPort
+		
+		if attempt > 0 {
+			log.Printf("Port %d was busy, using port %d instead", *port, actualPort)
+		}
+		break
 	}
 
 	// Start server in goroutine
 	go func() {
-		log.Printf("Starting server at http://localhost%s", addr)
+		log.Printf("Starting server at http://localhost:%d", actualPort)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server error: %v", err)
 		}

@@ -109,7 +109,7 @@ epub-reader overrule <decision-id>
 Start the web server:
 
 ```bash
-epub-reader-server --port 8080
+epub-server --port 8080
 ```
 
 Or run directly:
@@ -126,6 +126,40 @@ Then visit http://localhost:8080
 - **Author View**: See corpus statistics and list of books per author
 - **Audit View**: Review and overrule section classification decisions (HTMX-powered)
 - **Compare View**: Radar chart comparison of two authors' writing metrics
+
+## Development
+
+### Running Locally
+
+During development, use `go run` to automatically rebuild on changes:
+
+```bash
+# CLI tool
+go run ./cmd/epub-reader <command>
+
+# Web server (rebuilds automatically)
+go run ./cmd/epub-server --port 8080
+```
+
+The server will automatically find an available port if 8080 is busy (tries 8080-8089).
+
+### Building for Production
+
+Install the binaries:
+
+```bash
+go install ./cmd/epub-reader
+go install ./cmd/epub-server
+```
+
+Then run them directly:
+
+```bash
+epub-reader <command>
+epub-server --port 8080
+```
+
+**Note:** After making code changes, you must rebuild (`go install`) or use `go run` to see the changes.
 
 ## Configuration
 
