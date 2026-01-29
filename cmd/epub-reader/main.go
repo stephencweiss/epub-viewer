@@ -48,6 +48,8 @@ func main() {
 		reassignCmd(),
 		authorCmd(),
 		editCmd(),
+		inspectCmd(),
+		modifyCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {
@@ -1492,4 +1494,190 @@ func truncateString(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen-3] + "..."
+}
+
+// inspectCmd shows EPUB metadata and statistics without adding to database.
+func inspectCmd() *cobra.Command {
+	var verbose bool
+
+	cmd := &cobra.Command{
+		Use:   "inspect <epub-file>",
+		Short: "Inspect EPUB metadata and statistics",
+		Long: `Inspect an EPUB file without adding it to the database.
+
+Shows metadata (title, author, language, publisher, etc.) and
+basic statistics (chapters, word count, etc.).`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path := args[0]
+
+			// Parse EPUB
+			book, err := epub.Parse(path)
+			if err != nil {
+				return fmt.Errorf("failed to parse EPUB: %w", err)
+			}
+
+			// Display metadata
+			fmt.Println("=== Metadata ===")
+			fmt.Printf("Title:       %s\n", book.Title)
+			fmt.Printf("Author(s):   %s\n", strings.Join(book.Authors, ", "))
+			fmt.Printf("Language:    %s\n", book.Language)
+			fmt.Printf("Publisher:   %s\n", book.Publisher)
+			if book.Identifier != "" {
+				fmt.Printf("Identifier:  %s\n", book.Identifier)
+			}
+			if !book.Date.IsZero() {
+				fmt.Printf("Date:        %s\n", book.Date.Format("2006-01-02"))
+			}
+			if book.Description != "" {
+				desc := book.Description
+				if len(desc) > 200 {
+					desc = desc[:197] + "..."
+				}
+				fmt.Printf("Description: %s\n", desc)
+			}
+			fmt.Println()
+
+			// Display statistics
+			fmt.Println("=== Statistics ===")
+			fmt.Printf("Chapters:    %d\n", book.ChapterCount())
+
+			// Calculate word count
+			fullText := book.FullText()
+			wordCount := len(strings.Fields(fullText))
+			fmt.Printf("Words:       %d (approx)\n", wordCount)
+
+			// Unique words
+			wordMap := make(map[string]bool)
+			for _, word := range strings.Fields(strings.ToLower(fullText)) {
+				wordMap[word] = true
+			}
+			fmt.Printf("Unique:      %d (approx)\n", len(wordMap))
+
+			// Character count
+			fmt.Printf("Characters:  %d\n", len(fullText))
+
+			if verbose {
+				fmt.Println()
+				fmt.Println("=== Chapters ===")
+				w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+				fmt.Fprintln(w, "#\tTitle\tWords")
+				fmt.Fprintln(w, "-\t-----\t-----")
+
+				for i, chapter := range book.Chapters {
+					title := chapter.Title
+					if title == "" {
+						title = "(untitled)"
+					}
+					words := len(strings.Fields(chapter.Text))
+					fmt.Fprintf(w, "%d\t%s\t%d\n", i+1, truncateString(title, 50), words)
+				}
+				w.Flush()
+			}
+
+			fmt.Println()
+			fmt.Printf("File: %s\n", path)
+			if !verbose {
+				fmt.Println("Use -v for chapter list")
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show chapter list")
+	return cmd
+}
+
+// modifyCmd modifies EPUB metadata and saves as a new file.
+func modifyCmd() *cobra.Command {
+	var title, author, language, publisher, output string
+
+	cmd := &cobra.Command{
+		Use:   "modify <epub-file>",
+		Short: "Modify EPUB metadata and save as new file",
+		Long: `Modify an EPUB file's metadata and save as a new file.
+
+By default, saves to <original>_edited.epub. Use --output to specify a different path.
+
+At least one of --title, --author, --language, or --publisher must be provided.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			inputPath := args[0]
+
+			// Check that at least one flag is provided
+			titleSet := cmd.Flags().Changed("title")
+			authorSet := cmd.Flags().Changed("author")
+			languageSet := cmd.Flags().Changed("language")
+			publisherSet := cmd.Flags().Changed("publisher")
+
+			if !titleSet && !authorSet && !languageSet && !publisherSet {
+				return fmt.Errorf("at least one of --title, --author, --language, or --publisher must be provided")
+			}
+
+			// First, parse to show current values
+			book, err := epub.Parse(inputPath)
+			if err != nil {
+				return fmt.Errorf("failed to parse EPUB: %w", err)
+			}
+
+			fmt.Println("Current metadata:")
+			fmt.Printf("  Title:     %s\n", book.Title)
+			fmt.Printf("  Author:    %s\n", strings.Join(book.Authors, ", "))
+			fmt.Printf("  Language:  %s\n", book.Language)
+			fmt.Printf("  Publisher: %s\n", book.Publisher)
+			fmt.Println()
+
+			// Build edit
+			edit := epub.MetadataEdit{}
+			if titleSet {
+				edit.Title = &title
+			}
+			if authorSet {
+				edit.Author = &author
+			}
+			if languageSet {
+				edit.Language = &language
+			}
+			if publisherSet {
+				edit.Publisher = &publisher
+			}
+
+			// Determine output path
+			outputPath := output
+			if outputPath == "" {
+				outputPath = epub.DefaultOutputPath(inputPath)
+			}
+
+			// Modify and save
+			if err := epub.ModifyMetadata(inputPath, outputPath, edit); err != nil {
+				return fmt.Errorf("failed to modify EPUB: %w", err)
+			}
+
+			fmt.Println("Modified metadata:")
+			if titleSet {
+				fmt.Printf("  Title:     %s -> %s\n", book.Title, title)
+			}
+			if authorSet {
+				fmt.Printf("  Author:    %s -> %s\n", strings.Join(book.Authors, ", "), author)
+			}
+			if languageSet {
+				fmt.Printf("  Language:  %s -> %s\n", book.Language, language)
+			}
+			if publisherSet {
+				fmt.Printf("  Publisher: %s -> %s\n", book.Publisher, publisher)
+			}
+			fmt.Println()
+			fmt.Printf("Saved to: %s\n", outputPath)
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&title, "title", "", "New title")
+	cmd.Flags().StringVar(&author, "author", "", "New author")
+	cmd.Flags().StringVar(&language, "language", "", "New language")
+	cmd.Flags().StringVar(&publisher, "publisher", "", "New publisher")
+	cmd.Flags().StringVarP(&output, "output", "o", "", "Output path (default: <input>_edited.epub)")
+	return cmd
 }
