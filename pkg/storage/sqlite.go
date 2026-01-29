@@ -804,3 +804,115 @@ func (s *SQLiteStore) GetAllowedTextForBook(bookID int64) (string, error) {
 	}
 	return strings.Join(texts, "\n\n"), rows.Err()
 }
+
+// --- Book/Author Management ---
+
+// ReassignBook moves a book to a different author.
+func (s *SQLiteStore) ReassignBook(bookID, newAuthorID int64) error {
+	// Verify the new author exists
+	_, err := s.GetAuthor(newAuthorID)
+	if err != nil {
+		return err
+	}
+
+	result, err := s.db.Exec("UPDATE books SET author_id = ? WHERE id = ?", newAuthorID, bookID)
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
+// RenameAuthor changes an author's name.
+func (s *SQLiteStore) RenameAuthor(authorID int64, newName string) error {
+	newName = strings.TrimSpace(newName)
+	if newName == "" {
+		return ErrInvalidInput
+	}
+
+	result, err := s.db.Exec("UPDATE authors SET name = ? WHERE id = ?", newName, authorID)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint") {
+			return ErrAlreadyExists
+		}
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
+// MergeAuthors moves all books from source author to target author, then deletes source.
+func (s *SQLiteStore) MergeAuthors(sourceID, targetID int64) error {
+	if sourceID == targetID {
+		return ErrInvalidInput
+	}
+
+	// Verify both authors exist
+	_, err := s.GetAuthor(sourceID)
+	if err != nil {
+		return fmt.Errorf("source author: %w", err)
+	}
+	_, err = s.GetAuthor(targetID)
+	if err != nil {
+		return fmt.Errorf("target author: %w", err)
+	}
+
+	// Move all books from source to target
+	_, err = s.db.Exec("UPDATE books SET author_id = ? WHERE author_id = ?", targetID, sourceID)
+	if err != nil {
+		return err
+	}
+
+	// Delete the source author (now has no books)
+	_, err = s.db.Exec("DELETE FROM authors WHERE id = ?", sourceID)
+	return err
+}
+
+// DeleteAuthor removes an author only if they have no books.
+func (s *SQLiteStore) DeleteAuthor(authorID int64) error {
+	count, err := s.CountBooksByAuthor(authorID)
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return ErrAuthorHasBooks
+	}
+
+	result, err := s.db.Exec("DELETE FROM authors WHERE id = ?", authorID)
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
+// CountBooksByAuthor returns the number of books by an author.
+func (s *SQLiteStore) CountBooksByAuthor(authorID int64) (int, error) {
+	var count int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM books WHERE author_id = ?", authorID).Scan(&count)
+	return count, err
+}

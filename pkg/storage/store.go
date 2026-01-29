@@ -7,6 +7,7 @@ var (
 	ErrNotFound       = errors.New("not found")
 	ErrAlreadyExists  = errors.New("already exists")
 	ErrInvalidInput   = errors.New("invalid input")
+	ErrAuthorHasBooks = errors.New("author has books and cannot be deleted")
 )
 
 // Store defines the interface for book storage operations.
