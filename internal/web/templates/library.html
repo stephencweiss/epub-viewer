@@ -14,6 +14,7 @@
             <th>Author</th>
             <th>Words</th>
             <th>Readability</th>
+            <th>Actions</th>
         </tr>
     </thead>
     <tbody>
@@ -23,6 +24,7 @@
             <td><a href="/authors/{{.AuthorID}}">{{.AuthorName}}</a></td>
             <td>{{if .Analysis}}{{.Analysis.TotalWords}}{{else}}-{{end}}</td>
             <td>{{if .Analysis}}{{formatFloat .Analysis.ReadabilityScore 1}}{{else}}-{{end}}</td>
+            <td><a href="/books/{{.ID}}/read">Read</a></td>
         </tr>
         {{end}}
     </tbody>
