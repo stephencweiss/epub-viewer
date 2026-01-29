@@ -125,21 +125,45 @@ func analyzeCmd() *cobra.Command {
 // addCmd adds an EPUB to the library.
 func addCmd() *cobra.Command {
 	var authorName string
+	var recursive bool
+	var batch bool
 
 	cmd := &cobra.Command{
-		Use:   "add <epub-file>",
-		Short: "Add an EPUB to the library",
-		Args:  cobra.ExactArgs(1),
+		Use:   "add <epub-file-or-directory>",
+		Short: "Add EPUB(s) to the library",
+		Long: `Add one or more EPUB files to the library.
+
+If a directory is specified, all .epub files in that directory will be added.
+Use --recursive to include subdirectories.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path, err := filepath.Abs(args[0])
+			inputPath, err := filepath.Abs(args[0])
 			if err != nil {
 				return err
 			}
 
-			// Parse EPUB
-			book, err := epub.Parse(path)
+			// Check if path is a directory or file
+			info, err := os.Stat(inputPath)
 			if err != nil {
-				return fmt.Errorf("failed to parse EPUB: %w", err)
+				return fmt.Errorf("failed to access path: %w", err)
+			}
+
+			// Collect EPUB files to add
+			var epubFiles []string
+			if info.IsDir() {
+				epubFiles, err = findEpubFiles(inputPath, recursive)
+				if err != nil {
+					return fmt.Errorf("failed to scan directory: %w", err)
+				}
+				if len(epubFiles) == 0 {
+					return fmt.Errorf("no .epub files found in %s", inputPath)
+				}
+				fmt.Printf("Found %d EPUB file(s)\n\n", len(epubFiles))
+			} else {
+				if !strings.HasSuffix(strings.ToLower(inputPath), ".epub") {
+					return fmt.Errorf("file is not an EPUB: %s", inputPath)
+				}
+				epubFiles = []string{inputPath}
 			}
 
 			// Open database
@@ -149,85 +173,160 @@ func addCmd() *cobra.Command {
 			}
 			defer store.Close()
 
-			// Check if book already exists
-			if existing, _ := store.GetBookByPath(path); existing != nil {
-				return fmt.Errorf("book already in library (ID: %d)", existing.ID)
-			}
-
-			// Determine author
-			if authorName == "" && len(book.Authors) > 0 {
-				authorName = book.Authors[0]
-			}
-			if authorName == "" {
-				authorName = "Unknown"
-			}
-
-			// Check for existing author
-			var authorID int64
-			existingAuthor, err := store.GetAuthorByName(authorName)
-			if err == storage.ErrNotFound {
-				// Check for similar authors
-				similar, _ := store.FindSimilarAuthors(authorName)
-				if len(similar) > 0 {
-					fmt.Printf("Found similar authors:\n")
-					for i, a := range similar {
-						fmt.Printf("  %d. %s\n", i+1, a.Name)
-					}
-					fmt.Printf("  %d. Create new author '%s'\n", len(similar)+1, authorName)
-					fmt.Print("Select option (default: create new): ")
-
-					var choice int
-					fmt.Scanln(&choice)
-					if choice >= 1 && choice <= len(similar) {
-						authorID = similar[choice-1].ID
-						authorName = similar[choice-1].Name
-					}
+			// Process each EPUB
+			var added, skipped, failed int
+			for i, path := range epubFiles {
+				if len(epubFiles) > 1 {
+					fmt.Printf("[%d/%d] %s\n", i+1, len(epubFiles), filepath.Base(path))
 				}
 
-				if authorID == 0 {
-					// Create new author
-					author, err := store.CreateAuthor(authorName)
-					if err != nil {
-						return fmt.Errorf("failed to create author: %w", err)
+				err := addSingleBook(store, path, authorName, batch)
+				if err != nil {
+					fmt.Printf("  Error: %v\n", err)
+					if strings.Contains(err.Error(), "already in library") {
+						skipped++
+					} else {
+						failed++
 					}
-					authorID = author.ID
-					fmt.Printf("Created new author: %s\n", authorName)
+				} else {
+					added++
 				}
-			} else if err != nil {
-				return fmt.Errorf("failed to lookup author: %w", err)
-			} else {
-				authorID = existingAuthor.ID
-				fmt.Printf("Using existing author: %s\n", existingAuthor.Name)
+
+				if len(epubFiles) > 1 {
+					fmt.Println()
+				}
 			}
 
-			// Add book
-			storedBook, err := store.AddBook(authorID, book.Title, path, book.Language, book.Publisher)
-			if err != nil {
-				return fmt.Errorf("failed to add book: %w", err)
+			// Summary for batch operations
+			if len(epubFiles) > 1 {
+				fmt.Printf("Summary: %d added, %d skipped, %d failed\n", added, skipped, failed)
 			}
-
-			fmt.Printf("Added book: %s (ID: %d)\n", book.Title, storedBook.ID)
-
-			// Analyze and store
-			fmt.Print("Analyzing... ")
-			analyzer := analysis.NewAnalyzer()
-			result := analyzer.AnalyzeBook(book)
-
-			stored := storage.FromAnalysis(storedBook.ID, result)
-			if err := store.SaveAnalysis(stored); err != nil {
-				return fmt.Errorf("failed to save analysis: %w", err)
-			}
-			fmt.Println("done")
-
-			fmt.Printf("  Words: %d | Unique: %d | Readability: %.1f\n",
-				result.TotalWords, result.UniqueWords, result.ReadabilityScore)
 
 			return nil
 		},
 	}
 
-	cmd.Flags().StringVar(&authorName, "author", "", "Override author name")
+	cmd.Flags().StringVar(&authorName, "author", "", "Override author name for all books")
+	cmd.Flags().BoolVarP(&recursive, "recursive", "r", false, "Recursively search directories")
+	cmd.Flags().BoolVarP(&batch, "batch", "y", false, "Batch mode: auto-create authors without prompting")
 	return cmd
+}
+
+// findEpubFiles finds all .epub files in a directory.
+func findEpubFiles(dir string, recursive bool) ([]string, error) {
+	var files []string
+
+	if recursive {
+		err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if !d.IsDir() && strings.HasSuffix(strings.ToLower(path), ".epub") {
+				files = append(files, path)
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".epub") {
+				files = append(files, filepath.Join(dir, entry.Name()))
+			}
+		}
+	}
+
+	return files, nil
+}
+
+// addSingleBook adds a single EPUB file to the library.
+func addSingleBook(store *storage.SQLiteStore, path string, authorOverride string, batch bool) error {
+	// Check if book already exists
+	if existing, _ := store.GetBookByPath(path); existing != nil {
+		return fmt.Errorf("already in library (ID: %d)", existing.ID)
+	}
+
+	// Parse EPUB
+	book, err := epub.Parse(path)
+	if err != nil {
+		return fmt.Errorf("failed to parse EPUB: %w", err)
+	}
+
+	// Determine author
+	authorName := authorOverride
+	if authorName == "" && len(book.Authors) > 0 {
+		authorName = book.Authors[0]
+	}
+	if authorName == "" {
+		authorName = "Unknown"
+	}
+
+	// Check for existing author
+	var authorID int64
+	existingAuthor, err := store.GetAuthorByName(authorName)
+	if err == storage.ErrNotFound {
+		// Check for similar authors
+		similar, _ := store.FindSimilarAuthors(authorName)
+		if len(similar) > 0 && !batch {
+			fmt.Printf("Found similar authors:\n")
+			for i, a := range similar {
+				fmt.Printf("  %d. %s\n", i+1, a.Name)
+			}
+			fmt.Printf("  %d. Create new author '%s'\n", len(similar)+1, authorName)
+			fmt.Print("Select option (default: create new): ")
+
+			var choice int
+			fmt.Scanln(&choice)
+			if choice >= 1 && choice <= len(similar) {
+				authorID = similar[choice-1].ID
+				authorName = similar[choice-1].Name
+			}
+		}
+
+		if authorID == 0 {
+			// Create new author
+			author, err := store.CreateAuthor(authorName)
+			if err != nil {
+				return fmt.Errorf("failed to create author: %w", err)
+			}
+			authorID = author.ID
+			fmt.Printf("Created new author: %s\n", authorName)
+		}
+	} else if err != nil {
+		return fmt.Errorf("failed to lookup author: %w", err)
+	} else {
+		authorID = existingAuthor.ID
+		fmt.Printf("Using existing author: %s\n", existingAuthor.Name)
+	}
+
+	// Add book
+	storedBook, err := store.AddBook(authorID, book.Title, path, book.Language, book.Publisher)
+	if err != nil {
+		return fmt.Errorf("failed to add book: %w", err)
+	}
+
+	fmt.Printf("Added book: %s (ID: %d)\n", book.Title, storedBook.ID)
+
+	// Analyze and store
+	fmt.Print("Analyzing... ")
+	analyzer := analysis.NewAnalyzer()
+	result := analyzer.AnalyzeBook(book)
+
+	stored := storage.FromAnalysis(storedBook.ID, result)
+	if err := store.SaveAnalysis(stored); err != nil {
+		return fmt.Errorf("failed to save analysis: %w", err)
+	}
+	fmt.Println("done")
+
+	fmt.Printf("  Words: %d | Unique: %d | Readability: %.1f\n",
+		result.TotalWords, result.UniqueWords, result.ReadabilityScore)
+
+	return nil
 }
 
 // listCmd lists books in the library.
