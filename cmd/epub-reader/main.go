@@ -44,6 +44,7 @@ func main() {
 		overruleCmd(),
 		rulesCmd(),
 		filterCmd(),
+		readCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {
@@ -661,6 +662,113 @@ func infoCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// readCmd displays book contents.
+func readCmd() *cobra.Command {
+	var chapterNum int
+	var showText bool
+	var maxChars int
+
+	cmd := &cobra.Command{
+		Use:   "read <book-id>",
+		Short: "View book contents",
+		Long: `View book contents from the library.
+
+By default, shows the chapter list. Use flags to view content:
+  -c, --chapter N    Show chapter N's full text
+  -t, --text         Show all text (truncated to --max-chars)`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var id int64
+			if _, err := fmt.Sscanf(args[0], "%d", &id); err != nil {
+				return fmt.Errorf("invalid book ID: %s", args[0])
+			}
+
+			store, err := storage.NewSQLiteStore(dbPath)
+			if err != nil {
+				return fmt.Errorf("failed to open database: %w", err)
+			}
+			defer store.Close()
+
+			// Get book info
+			book, err := store.GetBook(id)
+			if err == storage.ErrNotFound {
+				return fmt.Errorf("book not found: %d", id)
+			}
+			if err != nil {
+				return err
+			}
+
+			// Parse the EPUB
+			parsed, err := epub.Parse(book.Path)
+			if err != nil {
+				return fmt.Errorf("failed to parse EPUB: %w", err)
+			}
+
+			// Display header
+			fmt.Printf("Title: %s\n", book.Title)
+			fmt.Printf("Author: %s\n", book.AuthorName)
+			fmt.Printf("Chapters: %d\n", parsed.ChapterCount())
+			fmt.Println()
+
+			// Show specific chapter
+			if chapterNum > 0 {
+				if chapterNum > len(parsed.Chapters) {
+					return fmt.Errorf("chapter %d does not exist (book has %d chapters)", chapterNum, len(parsed.Chapters))
+				}
+
+				chapter := parsed.Chapters[chapterNum-1]
+				fmt.Printf("=== Chapter %d", chapterNum)
+				if chapter.Title != "" {
+					fmt.Printf(": %s", chapter.Title)
+				}
+				fmt.Println(" ===")
+				fmt.Println()
+
+				fmt.Println(chapter.Text)
+				return nil
+			}
+
+			// Show all text
+			if showText {
+				text := parsed.FullText()
+				if len(text) > maxChars {
+					text = text[:maxChars] + fmt.Sprintf("\n\n... [truncated at %d chars, total: %d chars]", maxChars, len(parsed.FullText()))
+				}
+				fmt.Println(text)
+				return nil
+			}
+
+			// Default: show chapter list
+			fmt.Println("=== Chapters ===")
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "#\tTitle\tWords (approx)")
+			fmt.Fprintln(w, "-\t-----\t--------------")
+
+			for i, chapter := range parsed.Chapters {
+				title := chapter.Title
+				if title == "" {
+					title = "(untitled)"
+				}
+				// Rough word count
+				words := len(strings.Fields(chapter.Text))
+				fmt.Fprintf(w, "%d\t%s\t%d\n", i+1, truncateString(title, 50), words)
+			}
+			w.Flush()
+
+			fmt.Println()
+			fmt.Println("Use 'epub-reader read <id> -c N' to view chapter N")
+			fmt.Println("Use 'epub-reader read <id> -t' to view all text")
+
+			return nil
+		},
+	}
+
+	cmd.Flags().IntVarP(&chapterNum, "chapter", "c", 0, "Show specific chapter number")
+	cmd.Flags().BoolVarP(&showText, "text", "t", false, "Show all text content")
+	cmd.Flags().IntVar(&maxChars, "max-chars", 10000, "Maximum characters to show with --text")
+	return cmd
 }
 
 // findAuthor finds an author by name or similar.
