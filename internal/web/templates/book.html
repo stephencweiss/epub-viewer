@@ -69,6 +69,23 @@
 
 <details>
     <summary>Manage Book</summary>
+
+    <article>
+        <h4>Edit Metadata</h4>
+        <form hx-post="/books/{{.Book.ID}}/edit" hx-swap="none">
+            <label for="title">Title</label>
+            <input type="text" name="title" id="title" value="{{.Book.Title}}" required>
+
+            <label for="language">Language</label>
+            <input type="text" name="language" id="language" value="{{.Book.Language}}">
+
+            <label for="publisher">Publisher</label>
+            <input type="text" name="publisher" id="publisher" value="{{.Book.Publisher}}">
+
+            <button type="submit">Save Changes</button>
+        </form>
+    </article>
+
     <article>
         <h4>Reassign to Different Author</h4>
         <form hx-post="/books/{{.Book.ID}}/reassign" hx-swap="none">

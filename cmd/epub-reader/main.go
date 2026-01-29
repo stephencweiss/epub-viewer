@@ -47,6 +47,7 @@ func main() {
 		readCmd(),
 		reassignCmd(),
 		authorCmd(),
+		editCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {
@@ -974,6 +975,87 @@ func authorRenameCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// editCmd edits book metadata.
+func editCmd() *cobra.Command {
+	var title, language, publisher string
+
+	cmd := &cobra.Command{
+		Use:   "edit <book-id>",
+		Short: "Edit book metadata",
+		Long: `Edit book metadata such as title, language, and publisher.
+
+At least one flag must be provided. Only provided fields are updated.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var id int64
+			if _, err := fmt.Sscanf(args[0], "%d", &id); err != nil {
+				return fmt.Errorf("invalid book ID: %s", args[0])
+			}
+
+			// Check that at least one flag is provided
+			titleSet := cmd.Flags().Changed("title")
+			languageSet := cmd.Flags().Changed("language")
+			publisherSet := cmd.Flags().Changed("publisher")
+
+			if !titleSet && !languageSet && !publisherSet {
+				return fmt.Errorf("at least one of --title, --language, or --publisher must be provided")
+			}
+
+			store, err := storage.NewSQLiteStore(dbPath)
+			if err != nil {
+				return fmt.Errorf("failed to open database: %w", err)
+			}
+			defer store.Close()
+
+			// Get current book
+			book, err := store.GetBook(id)
+			if err == storage.ErrNotFound {
+				return fmt.Errorf("book not found: %d", id)
+			}
+			if err != nil {
+				return err
+			}
+
+			// Use current values for unchanged fields
+			newTitle := book.Title
+			newLanguage := book.Language
+			newPublisher := book.Publisher
+
+			if titleSet {
+				newTitle = title
+			}
+			if languageSet {
+				newLanguage = language
+			}
+			if publisherSet {
+				newPublisher = publisher
+			}
+
+			if err := store.UpdateBook(id, newTitle, newLanguage, newPublisher); err != nil {
+				return err
+			}
+
+			fmt.Printf("Updated book %d:\n", id)
+			if titleSet && title != book.Title {
+				fmt.Printf("  Title: %s -> %s\n", book.Title, newTitle)
+			}
+			if languageSet && language != book.Language {
+				fmt.Printf("  Language: %s -> %s\n", book.Language, newLanguage)
+			}
+			if publisherSet && publisher != book.Publisher {
+				fmt.Printf("  Publisher: %s -> %s\n", book.Publisher, newPublisher)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&title, "title", "", "New title")
+	cmd.Flags().StringVar(&language, "language", "", "New language")
+	cmd.Flags().StringVar(&publisher, "publisher", "", "New publisher")
+	return cmd
 }
 
 // findAuthor finds an author by name or similar.

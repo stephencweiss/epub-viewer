@@ -317,6 +317,37 @@ func (s *Server) handleReassignBook(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// handleEditBook edits book metadata (HTMX).
+func (s *Server) handleEditBook(w http.ResponseWriter, r *http.Request) {
+	bookID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid book ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	title := strings.TrimSpace(r.FormValue("title"))
+	language := strings.TrimSpace(r.FormValue("language"))
+	publisher := strings.TrimSpace(r.FormValue("publisher"))
+
+	if title == "" {
+		http.Error(w, "Title cannot be empty", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.store.UpdateBook(bookID, title, language, publisher); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("HX-Redirect", "/books/"+strconv.FormatInt(bookID, 10))
+	w.WriteHeader(http.StatusOK)
+}
+
 // handleRenameAuthor renames an author (HTMX).
 func (s *Server) handleRenameAuthor(w http.ResponseWriter, r *http.Request) {
 	authorID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)

@@ -99,6 +99,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /books/{id}/read", s.handleBookReader)
 	s.mux.HandleFunc("GET /books/{id}/chapters/{num}", s.handleChapterContent)
 	s.mux.HandleFunc("POST /books/{id}/reassign", s.handleReassignBook)
+	s.mux.HandleFunc("POST /books/{id}/edit", s.handleEditBook)
 
 	// Author views
 	s.mux.HandleFunc("GET /authors", s.handleAuthors)

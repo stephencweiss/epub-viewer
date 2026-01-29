@@ -916,3 +916,29 @@ func (s *SQLiteStore) CountBooksByAuthor(authorID int64) (int, error) {
 	err := s.db.QueryRow("SELECT COUNT(*) FROM books WHERE author_id = ?", authorID).Scan(&count)
 	return count, err
 }
+
+// UpdateBook updates a book's metadata fields.
+func (s *SQLiteStore) UpdateBook(bookID int64, title, language, publisher string) error {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return ErrInvalidInput
+	}
+
+	result, err := s.db.Exec(
+		"UPDATE books SET title = ?, language = ?, publisher = ? WHERE id = ?",
+		title, language, publisher, bookID,
+	)
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
