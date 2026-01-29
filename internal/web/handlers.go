@@ -3,7 +3,9 @@ package web
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
+	"epub-reader/pkg/epub"
 	"epub-reader/pkg/storage"
 )
 
@@ -207,4 +209,75 @@ func (s *Server) handleCompare(w http.ResponseWriter, r *http.Request) {
 		"Author1ID": author1ID,
 		"Author2ID": author2ID,
 	})
+}
+
+// handleBookReader renders the book reader page with chapter list.
+func (s *Server) handleBookReader(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		s.renderError(w, http.StatusBadRequest, "Invalid book ID")
+		return
+	}
+
+	book, err := s.store.GetBook(id)
+	if err != nil {
+		s.renderError(w, http.StatusNotFound, "Book not found")
+		return
+	}
+
+	// Parse the EPUB to get chapters
+	parsed, err := epub.Parse(book.Path)
+	if err != nil {
+		s.renderError(w, http.StatusInternalServerError, "Failed to parse EPUB file")
+		return
+	}
+
+	s.render(w, "reader", map[string]any{
+		"Book":     book,
+		"Chapters": parsed.Chapters,
+	})
+}
+
+// handleChapterContent returns the content of a specific chapter (HTMX partial).
+func (s *Server) handleChapterContent(w http.ResponseWriter, r *http.Request) {
+	bookID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid book ID", http.StatusBadRequest)
+		return
+	}
+
+	chapterNum, err := strconv.Atoi(r.PathValue("num"))
+	if err != nil || chapterNum < 1 {
+		http.Error(w, "Invalid chapter number", http.StatusBadRequest)
+		return
+	}
+
+	book, err := s.store.GetBook(bookID)
+	if err != nil {
+		http.Error(w, "Book not found", http.StatusNotFound)
+		return
+	}
+
+	parsed, err := epub.Parse(book.Path)
+	if err != nil {
+		http.Error(w, "Failed to parse EPUB", http.StatusInternalServerError)
+		return
+	}
+
+	if chapterNum > len(parsed.Chapters) {
+		http.Error(w, "Chapter not found", http.StatusNotFound)
+		return
+	}
+
+	chapter := parsed.Chapters[chapterNum-1]
+	wordCount := len(strings.Fields(chapter.Text))
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.templates["reader"].ExecuteTemplate(w, "chapter_content", map[string]any{
+		"Chapter":   chapter,
+		"Number":    chapterNum,
+		"WordCount": wordCount,
+	}); err != nil {
+		http.Error(w, "Failed to render chapter", http.StatusInternalServerError)
+	}
 }

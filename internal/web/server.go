@@ -45,6 +45,7 @@ func (s *Server) loadTemplates() error {
 		"formatPercent": formatPercent,
 		"formatFloat":   formatFloat,
 		"truncate":      truncateString,
+		"add":           func(a, b int) int { return a + b },
 	}
 
 	// Parse base template and partials first
@@ -62,7 +63,7 @@ func (s *Server) loadTemplates() error {
 	}
 
 	// Page templates that need their own namespace
-	pages := []string{"library", "book", "authors", "author", "audit", "compare", "error"}
+	pages := []string{"library", "book", "authors", "author", "audit", "compare", "error", "reader"}
 	s.templates = make(map[string]*template.Template)
 
 	for _, page := range pages {
@@ -95,6 +96,8 @@ func (s *Server) registerRoutes() {
 	// Library views
 	s.mux.HandleFunc("GET /", s.handleLibrary)
 	s.mux.HandleFunc("GET /books/{id}", s.handleBookDetail)
+	s.mux.HandleFunc("GET /books/{id}/read", s.handleBookReader)
+	s.mux.HandleFunc("GET /books/{id}/chapters/{num}", s.handleChapterContent)
 
 	// Author views
 	s.mux.HandleFunc("GET /authors", s.handleAuthors)

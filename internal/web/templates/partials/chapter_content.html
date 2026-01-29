@@ -1,0 +1,9 @@
+{{define "chapter_content"}}
+<article>
+    <header>
+        <h2>Chapter {{.Number}}{{if .Chapter.Title}}: {{.Chapter.Title}}{{end}}</h2>
+        <small>~{{.WordCount}} words</small>
+    </header>
+    <div class="chapter-text">{{.Chapter.Text}}</div>
+</article>
+{{end}}

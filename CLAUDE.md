@@ -92,3 +92,17 @@ go build -o epub-reader ./cmd/epub-reader
 # Test
 go test ./...
 ```
+
+## Plan Design
+
+When designing a plan to implement a feature / structuring a commit - these should be considered "vertical" slices that fully implement the feature - from the client (as necessary) all the way to the data layer.
+
+For example: If a plan includes adding a "Edit" and "Delete" functionality, this would involve
+- UI (to indicate in the client which behavior to take)
+- Route handlers (on the server for accepting the request)
+- Controllers to manage the request and isolate the business logic
+- Data/storage layer to communicate with the database
+
+In this case, we would have two commits:
+1/ Edit: includes any necessary UI, route handler, controller, and data changes necessary to support the "edit" feature
+2/ Delete: includes any necessary UI, route handler, controller, and data changes necessary to support the "delete" feature.
