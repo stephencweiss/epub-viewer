@@ -44,6 +44,7 @@ func (s *Server) loadTemplates() error {
 	funcMap := template.FuncMap{
 		"formatPercent": formatPercent,
 		"formatFloat":   formatFloat,
+		"formatWordsK":  formatWordsK,
 		"truncate":      truncateString,
 		"add":           func(a, b int) int { return a + b },
 	}
@@ -169,5 +170,12 @@ func truncateString(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen-3] + "..."
+}
+
+func formatWordsK(n int) string {
+	if n >= 1000 {
+		return fmt.Sprintf("%dk", (n+500)/1000)
+	}
+	return fmt.Sprintf("%d", n)
 }
 

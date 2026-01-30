@@ -7,13 +7,13 @@
 <h1>Library</h1>
 
 {{if .Books}}
-<table>
+<table data-sortable>
     <thead>
         <tr>
-            <th>Title</th>
-            <th>Author</th>
-            <th>Words</th>
-            <th>Readability</th>
+            <th data-sort="title">Title</th>
+            <th data-sort="author">Author</th>
+            <th data-sort="words" data-type="number">Words (k)</th>
+            <th data-sort="readability" data-type="number">Readability</th>
             <th>Actions</th>
         </tr>
     </thead>
@@ -22,8 +22,8 @@
         <tr>
             <td><a href="/books/{{.ID}}">{{.Title}}</a></td>
             <td><a href="/authors/{{.AuthorID}}">{{.AuthorName}}</a></td>
-            <td>{{if .Analysis}}{{.Analysis.TotalWords}}{{else}}-{{end}}</td>
-            <td>{{if .Analysis}}{{formatFloat .Analysis.ReadabilityScore 1}}{{else}}-{{end}}</td>
+            <td data-value="{{if .Analysis}}{{.Analysis.TotalWords}}{{else}}0{{end}}">{{if .Analysis}}{{formatWordsK .Analysis.TotalWords}}{{else}}-{{end}}</td>
+            <td data-value="{{if .Analysis}}{{.Analysis.ReadabilityScore}}{{else}}0{{end}}">{{if .Analysis}}{{formatFloat .Analysis.ReadabilityScore 1}}{{else}}-{{end}}</td>
             <td><a href="/books/{{.ID}}/read">Read</a></td>
         </tr>
         {{end}}
@@ -33,4 +33,8 @@
 <p>No books in the library yet. Use the CLI to add books:</p>
 <pre>epub-reader add /path/to/book.epub</pre>
 {{end}}
+{{end}}
+
+{{define "scripts"}}
+<script src="/static/js/table-sort.js"></script>
 {{end}}
