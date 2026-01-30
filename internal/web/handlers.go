@@ -393,6 +393,11 @@ func (s *Server) handleDeleteAuthor(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// handleInfo renders the statistics info page.
+func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
+	s.render(w, "info", nil)
+}
+
 // handleMergeAuthors merges two authors (HTMX).
 func (s *Server) handleMergeAuthors(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {

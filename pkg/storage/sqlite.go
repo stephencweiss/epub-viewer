@@ -26,7 +26,7 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 		}
 	}
 
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite3", dbPath+"?_foreign_keys=on")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -124,6 +124,25 @@ func (s *SQLiteStore) initSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_decision_audit_book ON decision_audit(book_id);
 	CREATE INDEX IF NOT EXISTS idx_sections_book ON sections(book_id);
 	CREATE INDEX IF NOT EXISTS idx_sections_status ON sections(status);
+
+	CREATE TABLE IF NOT EXISTS beats (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		book_id INTEGER NOT NULL,
+		chapter_id TEXT,
+		sequence INTEGER NOT NULL,
+		word_count INTEGER,
+		summary TEXT NOT NULL,
+		conflict TEXT NOT NULL,
+		choice TEXT NOT NULL,
+		consequence TEXT NOT NULL,
+		perspective_shift TEXT,
+		llm_prompt TEXT,
+		llm_response TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_beats_book ON beats(book_id);
 	`
 
 	_, err := s.db.Exec(schema)
@@ -941,4 +960,87 @@ func (s *SQLiteStore) UpdateBook(bookID int64, title, language, publisher string
 	}
 
 	return nil
+}
+
+// --- Beats ---
+
+// SaveBeat stores a narrative beat for a book.
+func (s *SQLiteStore) SaveBeat(beat *Beat) error {
+	result, err := s.db.Exec(`
+		INSERT INTO beats (book_id, chapter_id, sequence, word_count, summary, conflict, choice, consequence, perspective_shift, llm_prompt, llm_response)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, beat.BookID, beat.ChapterID, beat.Sequence, beat.WordCount, beat.Summary, beat.Conflict, beat.Choice, beat.Consequence, beat.PerspectiveShift, beat.LLMPrompt, beat.LLMResponse)
+
+	if err != nil {
+		return err
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return err
+	}
+	beat.ID = id
+	return nil
+}
+
+// GetBeat retrieves a beat by ID.
+func (s *SQLiteStore) GetBeat(id int64) (*Beat, error) {
+	var b Beat
+	err := s.db.QueryRow(`
+		SELECT id, book_id, chapter_id, sequence, word_count, summary, conflict, choice, consequence, perspective_shift, llm_prompt, llm_response, created_at
+		FROM beats WHERE id = ?
+	`, id).Scan(&b.ID, &b.BookID, &b.ChapterID, &b.Sequence, &b.WordCount, &b.Summary, &b.Conflict, &b.Choice, &b.Consequence, &b.PerspectiveShift, &b.LLMPrompt, &b.LLMResponse, &b.CreatedAt)
+
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &b, nil
+}
+
+// ListBeatsByBook returns all beats for a book in sequence order.
+func (s *SQLiteStore) ListBeatsByBook(bookID int64) ([]Beat, error) {
+	rows, err := s.db.Query(`
+		SELECT id, book_id, chapter_id, sequence, word_count, summary, conflict, choice, consequence, perspective_shift, llm_prompt, llm_response, created_at
+		FROM beats WHERE book_id = ? ORDER BY sequence
+	`, bookID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var beats []Beat
+	for rows.Next() {
+		var b Beat
+		if err := rows.Scan(&b.ID, &b.BookID, &b.ChapterID, &b.Sequence, &b.WordCount, &b.Summary, &b.Conflict, &b.Choice, &b.Consequence, &b.PerspectiveShift, &b.LLMPrompt, &b.LLMResponse, &b.CreatedAt); err != nil {
+			return nil, err
+		}
+		beats = append(beats, b)
+	}
+	return beats, rows.Err()
+}
+
+// DeleteBeatsByBook removes all beats for a book.
+func (s *SQLiteStore) DeleteBeatsByBook(bookID int64) error {
+	_, err := s.db.Exec("DELETE FROM beats WHERE book_id = ?", bookID)
+	return err
+}
+
+// HasBeats returns true if the book has any beats analyzed.
+func (s *SQLiteStore) HasBeats(bookID int64) (bool, error) {
+	var count int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM beats WHERE book_id = ?", bookID).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// CountBeatsByBook returns the number of beats for a book.
+func (s *SQLiteStore) CountBeatsByBook(bookID int64) (int, error) {
+	var count int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM beats WHERE book_id = ?", bookID).Scan(&count)
+	return count, err
 }

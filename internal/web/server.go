@@ -64,7 +64,7 @@ func (s *Server) loadTemplates() error {
 	}
 
 	// Page templates that need their own namespace
-	pages := []string{"library", "book", "authors", "author", "audit", "compare", "error", "reader"}
+	pages := []string{"library", "book", "authors", "author", "audit", "compare", "error", "reader", "info"}
 	s.templates = make(map[string]*template.Template)
 
 	for _, page := range pages {
@@ -116,6 +116,9 @@ func (s *Server) registerRoutes() {
 
 	// Compare view
 	s.mux.HandleFunc("GET /compare", s.handleCompare)
+
+	// Info page
+	s.mux.HandleFunc("GET /info", s.handleInfo)
 
 	// API endpoints for Chart.js
 	s.mux.HandleFunc("GET /api/authors/{id}/metrics", s.apiAuthorMetrics)

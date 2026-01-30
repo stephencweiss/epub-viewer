@@ -163,3 +163,20 @@ type Section struct {
 	Order       int    // Reading order from spine
 	CreatedAt   time.Time
 }
+
+// Beat represents a narrative beat extracted from a book.
+type Beat struct {
+	ID               int64
+	BookID           int64
+	ChapterID        string // Reference to chapter if applicable
+	Sequence         int    // Order within the book (0-indexed)
+	WordCount        int
+	Summary          string
+	Conflict         string
+	Choice           string
+	Consequence      string
+	PerspectiveShift string // Optional
+	LLMPrompt        string // Full prompt for reproducibility
+	LLMResponse      string // Raw LLM response
+	CreatedAt        time.Time
+}
