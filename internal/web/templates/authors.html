@@ -27,6 +27,36 @@
         {{end}}
     </tbody>
 </table>
+
+{{if gt (len .Authors) 1}}
+<details>
+    <summary>Merge Authors</summary>
+    <article>
+        <p>Move all books from one author to another, then delete the source author.</p>
+        <form hx-post="/authors/merge" hx-swap="none">
+            <div class="grid">
+                <div>
+                    <label for="source_id">Move books FROM</label>
+                    <select name="source_id" id="source_id" required>
+                        {{range .Authors}}
+                        <option value="{{.ID}}">{{.Name}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div>
+                    <label for="target_id">INTO</label>
+                    <select name="target_id" id="target_id" required>
+                        {{range .Authors}}
+                        <option value="{{.ID}}">{{.Name}}</option>
+                        {{end}}
+                    </select>
+                </div>
+            </div>
+            <button type="submit">Merge Authors</button>
+        </form>
+    </article>
+</details>
+{{end}}
 {{else}}
 <p>No authors in the library yet.</p>
 {{end}}

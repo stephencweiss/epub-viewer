@@ -44,6 +44,12 @@ func main() {
 		overruleCmd(),
 		rulesCmd(),
 		filterCmd(),
+		readCmd(),
+		reassignCmd(),
+		authorCmd(),
+		editCmd(),
+		inspectCmd(),
+		modifyCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {
@@ -663,6 +669,397 @@ func infoCmd() *cobra.Command {
 	}
 }
 
+// readCmd displays book contents.
+func readCmd() *cobra.Command {
+	var chapterNum int
+	var showText bool
+	var maxChars int
+
+	cmd := &cobra.Command{
+		Use:   "read <book-id>",
+		Short: "View book contents",
+		Long: `View book contents from the library.
+
+By default, shows the chapter list. Use flags to view content:
+  -c, --chapter N    Show chapter N's full text
+  -t, --text         Show all text (truncated to --max-chars)`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var id int64
+			if _, err := fmt.Sscanf(args[0], "%d", &id); err != nil {
+				return fmt.Errorf("invalid book ID: %s", args[0])
+			}
+
+			store, err := storage.NewSQLiteStore(dbPath)
+			if err != nil {
+				return fmt.Errorf("failed to open database: %w", err)
+			}
+			defer store.Close()
+
+			// Get book info
+			book, err := store.GetBook(id)
+			if err == storage.ErrNotFound {
+				return fmt.Errorf("book not found: %d", id)
+			}
+			if err != nil {
+				return err
+			}
+
+			// Parse the EPUB
+			parsed, err := epub.Parse(book.Path)
+			if err != nil {
+				return fmt.Errorf("failed to parse EPUB: %w", err)
+			}
+
+			// Display header
+			fmt.Printf("Title: %s\n", book.Title)
+			fmt.Printf("Author: %s\n", book.AuthorName)
+			fmt.Printf("Chapters: %d\n", parsed.ChapterCount())
+			fmt.Println()
+
+			// Show specific chapter
+			if chapterNum > 0 {
+				if chapterNum > len(parsed.Chapters) {
+					return fmt.Errorf("chapter %d does not exist (book has %d chapters)", chapterNum, len(parsed.Chapters))
+				}
+
+				chapter := parsed.Chapters[chapterNum-1]
+				fmt.Printf("=== Chapter %d", chapterNum)
+				if chapter.Title != "" {
+					fmt.Printf(": %s", chapter.Title)
+				}
+				fmt.Println(" ===")
+				fmt.Println()
+
+				fmt.Println(chapter.Text)
+				return nil
+			}
+
+			// Show all text
+			if showText {
+				text := parsed.FullText()
+				if len(text) > maxChars {
+					text = text[:maxChars] + fmt.Sprintf("\n\n... [truncated at %d chars, total: %d chars]", maxChars, len(parsed.FullText()))
+				}
+				fmt.Println(text)
+				return nil
+			}
+
+			// Default: show chapter list
+			fmt.Println("=== Chapters ===")
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "#\tTitle\tWords (approx)")
+			fmt.Fprintln(w, "-\t-----\t--------------")
+
+			for i, chapter := range parsed.Chapters {
+				title := chapter.Title
+				if title == "" {
+					title = "(untitled)"
+				}
+				// Rough word count
+				words := len(strings.Fields(chapter.Text))
+				fmt.Fprintf(w, "%d\t%s\t%d\n", i+1, truncateString(title, 50), words)
+			}
+			w.Flush()
+
+			fmt.Println()
+			fmt.Println("Use 'epub-reader read <id> -c N' to view chapter N")
+			fmt.Println("Use 'epub-reader read <id> -t' to view all text")
+
+			return nil
+		},
+	}
+
+	cmd.Flags().IntVarP(&chapterNum, "chapter", "c", 0, "Show specific chapter number")
+	cmd.Flags().BoolVarP(&showText, "text", "t", false, "Show all text content")
+	cmd.Flags().IntVar(&maxChars, "max-chars", 10000, "Maximum characters to show with --text")
+	return cmd
+}
+
+// reassignCmd moves a book to a different author.
+func reassignCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "reassign <book-id> <author-id>",
+		Short: "Move a book to a different author",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var bookID, authorID int64
+			if _, err := fmt.Sscanf(args[0], "%d", &bookID); err != nil {
+				return fmt.Errorf("invalid book ID: %s", args[0])
+			}
+			if _, err := fmt.Sscanf(args[1], "%d", &authorID); err != nil {
+				return fmt.Errorf("invalid author ID: %s", args[1])
+			}
+
+			store, err := storage.NewSQLiteStore(dbPath)
+			if err != nil {
+				return fmt.Errorf("failed to open database: %w", err)
+			}
+			defer store.Close()
+
+			// Get book and author info for confirmation
+			book, err := store.GetBook(bookID)
+			if err == storage.ErrNotFound {
+				return fmt.Errorf("book not found: %d", bookID)
+			}
+			if err != nil {
+				return err
+			}
+
+			newAuthor, err := store.GetAuthor(authorID)
+			if err == storage.ErrNotFound {
+				return fmt.Errorf("author not found: %d", authorID)
+			}
+			if err != nil {
+				return err
+			}
+
+			oldAuthorName := book.AuthorName
+
+			if err := store.ReassignBook(bookID, authorID); err != nil {
+				return err
+			}
+
+			fmt.Printf("Reassigned: %s\n", book.Title)
+			fmt.Printf("  From: %s\n", oldAuthorName)
+			fmt.Printf("  To: %s\n", newAuthor.Name)
+
+			return nil
+		},
+	}
+}
+
+// authorCmd manages authors.
+func authorCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "author",
+		Short: "Manage authors",
+	}
+
+	cmd.AddCommand(authorMergeCmd(), authorDeleteCmd(), authorRenameCmd())
+	return cmd
+}
+
+func authorMergeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "merge <from-id> <to-id>",
+		Short: "Merge authors: move all books from source to target, delete source",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var fromID, toID int64
+			if _, err := fmt.Sscanf(args[0], "%d", &fromID); err != nil {
+				return fmt.Errorf("invalid source author ID: %s", args[0])
+			}
+			if _, err := fmt.Sscanf(args[1], "%d", &toID); err != nil {
+				return fmt.Errorf("invalid target author ID: %s", args[1])
+			}
+
+			store, err := storage.NewSQLiteStore(dbPath)
+			if err != nil {
+				return fmt.Errorf("failed to open database: %w", err)
+			}
+			defer store.Close()
+
+			// Get author info for confirmation
+			fromAuthor, err := store.GetAuthor(fromID)
+			if err == storage.ErrNotFound {
+				return fmt.Errorf("source author not found: %d", fromID)
+			}
+			if err != nil {
+				return err
+			}
+
+			toAuthor, err := store.GetAuthor(toID)
+			if err == storage.ErrNotFound {
+				return fmt.Errorf("target author not found: %d", toID)
+			}
+			if err != nil {
+				return err
+			}
+
+			// Get book count for summary
+			bookCount, _ := store.CountBooksByAuthor(fromID)
+
+			if err := store.MergeAuthors(fromID, toID); err != nil {
+				return err
+			}
+
+			fmt.Printf("Merged authors:\n")
+			fmt.Printf("  Source: %s (ID: %d) - deleted\n", fromAuthor.Name, fromID)
+			fmt.Printf("  Target: %s (ID: %d)\n", toAuthor.Name, toID)
+			fmt.Printf("  Books moved: %d\n", bookCount)
+
+			return nil
+		},
+	}
+}
+
+func authorDeleteCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "delete <author-id>",
+		Short: "Delete an author (must have no books)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var id int64
+			if _, err := fmt.Sscanf(args[0], "%d", &id); err != nil {
+				return fmt.Errorf("invalid author ID: %s", args[0])
+			}
+
+			store, err := storage.NewSQLiteStore(dbPath)
+			if err != nil {
+				return fmt.Errorf("failed to open database: %w", err)
+			}
+			defer store.Close()
+
+			// Get author info for confirmation
+			author, err := store.GetAuthor(id)
+			if err == storage.ErrNotFound {
+				return fmt.Errorf("author not found: %d", id)
+			}
+			if err != nil {
+				return err
+			}
+
+			if err := store.DeleteAuthor(id); err != nil {
+				if err == storage.ErrAuthorHasBooks {
+					count, _ := store.CountBooksByAuthor(id)
+					return fmt.Errorf("cannot delete author '%s': has %d book(s). Use 'author merge' or 'reassign' first", author.Name, count)
+				}
+				return err
+			}
+
+			fmt.Printf("Deleted author: %s (ID: %d)\n", author.Name, id)
+			return nil
+		},
+	}
+}
+
+func authorRenameCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "rename <author-id> <new-name>",
+		Short: "Rename an author",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var id int64
+			if _, err := fmt.Sscanf(args[0], "%d", &id); err != nil {
+				return fmt.Errorf("invalid author ID: %s", args[0])
+			}
+			newName := args[1]
+
+			store, err := storage.NewSQLiteStore(dbPath)
+			if err != nil {
+				return fmt.Errorf("failed to open database: %w", err)
+			}
+			defer store.Close()
+
+			// Get old name for confirmation
+			author, err := store.GetAuthor(id)
+			if err == storage.ErrNotFound {
+				return fmt.Errorf("author not found: %d", id)
+			}
+			if err != nil {
+				return err
+			}
+
+			oldName := author.Name
+
+			if err := store.RenameAuthor(id, newName); err != nil {
+				if err == storage.ErrAlreadyExists {
+					return fmt.Errorf("an author with name '%s' already exists", newName)
+				}
+				return err
+			}
+
+			fmt.Printf("Renamed author:\n")
+			fmt.Printf("  Old: %s\n", oldName)
+			fmt.Printf("  New: %s\n", newName)
+
+			return nil
+		},
+	}
+}
+
+// editCmd edits book metadata.
+func editCmd() *cobra.Command {
+	var title, language, publisher string
+
+	cmd := &cobra.Command{
+		Use:   "edit <book-id>",
+		Short: "Edit book metadata",
+		Long: `Edit book metadata such as title, language, and publisher.
+
+At least one flag must be provided. Only provided fields are updated.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var id int64
+			if _, err := fmt.Sscanf(args[0], "%d", &id); err != nil {
+				return fmt.Errorf("invalid book ID: %s", args[0])
+			}
+
+			// Check that at least one flag is provided
+			titleSet := cmd.Flags().Changed("title")
+			languageSet := cmd.Flags().Changed("language")
+			publisherSet := cmd.Flags().Changed("publisher")
+
+			if !titleSet && !languageSet && !publisherSet {
+				return fmt.Errorf("at least one of --title, --language, or --publisher must be provided")
+			}
+
+			store, err := storage.NewSQLiteStore(dbPath)
+			if err != nil {
+				return fmt.Errorf("failed to open database: %w", err)
+			}
+			defer store.Close()
+
+			// Get current book
+			book, err := store.GetBook(id)
+			if err == storage.ErrNotFound {
+				return fmt.Errorf("book not found: %d", id)
+			}
+			if err != nil {
+				return err
+			}
+
+			// Use current values for unchanged fields
+			newTitle := book.Title
+			newLanguage := book.Language
+			newPublisher := book.Publisher
+
+			if titleSet {
+				newTitle = title
+			}
+			if languageSet {
+				newLanguage = language
+			}
+			if publisherSet {
+				newPublisher = publisher
+			}
+
+			if err := store.UpdateBook(id, newTitle, newLanguage, newPublisher); err != nil {
+				return err
+			}
+
+			fmt.Printf("Updated book %d:\n", id)
+			if titleSet && title != book.Title {
+				fmt.Printf("  Title: %s -> %s\n", book.Title, newTitle)
+			}
+			if languageSet && language != book.Language {
+				fmt.Printf("  Language: %s -> %s\n", book.Language, newLanguage)
+			}
+			if publisherSet && publisher != book.Publisher {
+				fmt.Printf("  Publisher: %s -> %s\n", book.Publisher, newPublisher)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&title, "title", "", "New title")
+	cmd.Flags().StringVar(&language, "language", "", "New language")
+	cmd.Flags().StringVar(&publisher, "publisher", "", "New publisher")
+	return cmd
+}
+
 // findAuthor finds an author by name or similar.
 func findAuthor(store *storage.SQLiteStore, name string) (*storage.Author, error) {
 	author, err := store.GetAuthorByName(name)
@@ -1097,4 +1494,190 @@ func truncateString(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen-3] + "..."
+}
+
+// inspectCmd shows EPUB metadata and statistics without adding to database.
+func inspectCmd() *cobra.Command {
+	var verbose bool
+
+	cmd := &cobra.Command{
+		Use:   "inspect <epub-file>",
+		Short: "Inspect EPUB metadata and statistics",
+		Long: `Inspect an EPUB file without adding it to the database.
+
+Shows metadata (title, author, language, publisher, etc.) and
+basic statistics (chapters, word count, etc.).`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path := args[0]
+
+			// Parse EPUB
+			book, err := epub.Parse(path)
+			if err != nil {
+				return fmt.Errorf("failed to parse EPUB: %w", err)
+			}
+
+			// Display metadata
+			fmt.Println("=== Metadata ===")
+			fmt.Printf("Title:       %s\n", book.Title)
+			fmt.Printf("Author(s):   %s\n", strings.Join(book.Authors, ", "))
+			fmt.Printf("Language:    %s\n", book.Language)
+			fmt.Printf("Publisher:   %s\n", book.Publisher)
+			if book.Identifier != "" {
+				fmt.Printf("Identifier:  %s\n", book.Identifier)
+			}
+			if !book.Date.IsZero() {
+				fmt.Printf("Date:        %s\n", book.Date.Format("2006-01-02"))
+			}
+			if book.Description != "" {
+				desc := book.Description
+				if len(desc) > 200 {
+					desc = desc[:197] + "..."
+				}
+				fmt.Printf("Description: %s\n", desc)
+			}
+			fmt.Println()
+
+			// Display statistics
+			fmt.Println("=== Statistics ===")
+			fmt.Printf("Chapters:    %d\n", book.ChapterCount())
+
+			// Calculate word count
+			fullText := book.FullText()
+			wordCount := len(strings.Fields(fullText))
+			fmt.Printf("Words:       %d (approx)\n", wordCount)
+
+			// Unique words
+			wordMap := make(map[string]bool)
+			for _, word := range strings.Fields(strings.ToLower(fullText)) {
+				wordMap[word] = true
+			}
+			fmt.Printf("Unique:      %d (approx)\n", len(wordMap))
+
+			// Character count
+			fmt.Printf("Characters:  %d\n", len(fullText))
+
+			if verbose {
+				fmt.Println()
+				fmt.Println("=== Chapters ===")
+				w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+				fmt.Fprintln(w, "#\tTitle\tWords")
+				fmt.Fprintln(w, "-\t-----\t-----")
+
+				for i, chapter := range book.Chapters {
+					title := chapter.Title
+					if title == "" {
+						title = "(untitled)"
+					}
+					words := len(strings.Fields(chapter.Text))
+					fmt.Fprintf(w, "%d\t%s\t%d\n", i+1, truncateString(title, 50), words)
+				}
+				w.Flush()
+			}
+
+			fmt.Println()
+			fmt.Printf("File: %s\n", path)
+			if !verbose {
+				fmt.Println("Use -v for chapter list")
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show chapter list")
+	return cmd
+}
+
+// modifyCmd modifies EPUB metadata and saves as a new file.
+func modifyCmd() *cobra.Command {
+	var title, author, language, publisher, output string
+
+	cmd := &cobra.Command{
+		Use:   "modify <epub-file>",
+		Short: "Modify EPUB metadata and save as new file",
+		Long: `Modify an EPUB file's metadata and save as a new file.
+
+By default, saves to <original>_edited.epub. Use --output to specify a different path.
+
+At least one of --title, --author, --language, or --publisher must be provided.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			inputPath := args[0]
+
+			// Check that at least one flag is provided
+			titleSet := cmd.Flags().Changed("title")
+			authorSet := cmd.Flags().Changed("author")
+			languageSet := cmd.Flags().Changed("language")
+			publisherSet := cmd.Flags().Changed("publisher")
+
+			if !titleSet && !authorSet && !languageSet && !publisherSet {
+				return fmt.Errorf("at least one of --title, --author, --language, or --publisher must be provided")
+			}
+
+			// First, parse to show current values
+			book, err := epub.Parse(inputPath)
+			if err != nil {
+				return fmt.Errorf("failed to parse EPUB: %w", err)
+			}
+
+			fmt.Println("Current metadata:")
+			fmt.Printf("  Title:     %s\n", book.Title)
+			fmt.Printf("  Author:    %s\n", strings.Join(book.Authors, ", "))
+			fmt.Printf("  Language:  %s\n", book.Language)
+			fmt.Printf("  Publisher: %s\n", book.Publisher)
+			fmt.Println()
+
+			// Build edit
+			edit := epub.MetadataEdit{}
+			if titleSet {
+				edit.Title = &title
+			}
+			if authorSet {
+				edit.Author = &author
+			}
+			if languageSet {
+				edit.Language = &language
+			}
+			if publisherSet {
+				edit.Publisher = &publisher
+			}
+
+			// Determine output path
+			outputPath := output
+			if outputPath == "" {
+				outputPath = epub.DefaultOutputPath(inputPath)
+			}
+
+			// Modify and save
+			if err := epub.ModifyMetadata(inputPath, outputPath, edit); err != nil {
+				return fmt.Errorf("failed to modify EPUB: %w", err)
+			}
+
+			fmt.Println("Modified metadata:")
+			if titleSet {
+				fmt.Printf("  Title:     %s -> %s\n", book.Title, title)
+			}
+			if authorSet {
+				fmt.Printf("  Author:    %s -> %s\n", strings.Join(book.Authors, ", "), author)
+			}
+			if languageSet {
+				fmt.Printf("  Language:  %s -> %s\n", book.Language, language)
+			}
+			if publisherSet {
+				fmt.Printf("  Publisher: %s -> %s\n", book.Publisher, publisher)
+			}
+			fmt.Println()
+			fmt.Printf("Saved to: %s\n", outputPath)
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&title, "title", "", "New title")
+	cmd.Flags().StringVar(&author, "author", "", "New author")
+	cmd.Flags().StringVar(&language, "language", "", "New language")
+	cmd.Flags().StringVar(&publisher, "publisher", "", "New publisher")
+	cmd.Flags().StringVarP(&output, "output", "o", "", "Output path (default: <input>_edited.epub)")
+	return cmd
 }

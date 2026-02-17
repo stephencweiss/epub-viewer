@@ -1,0 +1,110 @@
+{{define "reader"}}
+{{template "base" .}}
+{{end}}
+
+{{define "title"}}Read: {{.Book.Title}}{{end}}
+
+{{define "head"}}
+<style>
+    .reader-layout {
+        display: grid;
+        grid-template-columns: 250px 1fr;
+        gap: 2rem;
+        min-height: 70vh;
+    }
+    .chapter-list {
+        border-right: 1px solid var(--pico-muted-border-color);
+        padding-right: 1rem;
+        max-height: 70vh;
+        overflow-y: auto;
+    }
+    .chapter-list ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    .chapter-list li {
+        margin: 0;
+        padding: 0;
+    }
+    .chapter-list a {
+        display: block;
+        padding: 0.5rem;
+        border-radius: 4px;
+        text-decoration: none;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .chapter-list a:hover,
+    .chapter-list a.active {
+        background: var(--pico-secondary-background);
+    }
+    .chapter-content {
+        max-height: 70vh;
+        overflow-y: auto;
+        padding-right: 1rem;
+    }
+    .chapter-content p {
+        text-indent: 1.5em;
+        margin-bottom: 0.5em;
+    }
+    .chapter-text {
+        white-space: pre-wrap;
+        font-family: Georgia, serif;
+        line-height: 1.8;
+    }
+    @media (max-width: 768px) {
+        .reader-layout {
+            grid-template-columns: 1fr;
+        }
+        .chapter-list {
+            border-right: none;
+            border-bottom: 1px solid var(--pico-muted-border-color);
+            padding-bottom: 1rem;
+            max-height: 30vh;
+        }
+    }
+</style>
+{{end}}
+
+{{define "content"}}
+<nav aria-label="breadcrumb">
+    <ul>
+        <li><a href="/">Library</a></li>
+        <li><a href="/books/{{.Book.ID}}">{{truncate .Book.Title 30}}</a></li>
+        <li>Read</li>
+    </ul>
+</nav>
+
+<hgroup>
+    <h1>{{.Book.Title}}</h1>
+    <p>by <a href="/authors/{{.Book.AuthorID}}">{{.Book.AuthorName}}</a></p>
+</hgroup>
+
+<div class="reader-layout">
+    <aside class="chapter-list">
+        <h3>Chapters</h3>
+        <ul>
+            {{range $i, $ch := .Chapters}}
+            <li>
+                <a href="#"
+                   hx-get="/books/{{$.Book.ID}}/chapters/{{add $i 1}}"
+                   hx-target="#chapter-content"
+                   hx-swap="innerHTML"
+                   onclick="document.querySelectorAll('.chapter-list a').forEach(a => a.classList.remove('active')); this.classList.add('active');">
+                    {{add $i 1}}. {{if $ch.Title}}{{truncate $ch.Title 25}}{{else}}(untitled){{end}}
+                </a>
+            </li>
+            {{end}}
+        </ul>
+    </aside>
+
+    <div class="chapter-content" id="chapter-content">
+        <article>
+            <p>Select a chapter from the list to start reading.</p>
+            <p><strong>{{len .Chapters}}</strong> chapters available.</p>
+        </article>
+    </div>
+</div>
+{{end}}

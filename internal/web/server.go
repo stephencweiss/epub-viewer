@@ -44,7 +44,9 @@ func (s *Server) loadTemplates() error {
 	funcMap := template.FuncMap{
 		"formatPercent": formatPercent,
 		"formatFloat":   formatFloat,
+		"formatWordsK":  formatWordsK,
 		"truncate":      truncateString,
+		"add":           func(a, b int) int { return a + b },
 	}
 
 	// Parse base template and partials first
@@ -62,7 +64,7 @@ func (s *Server) loadTemplates() error {
 	}
 
 	// Page templates that need their own namespace
-	pages := []string{"library", "book", "authors", "author", "audit", "compare", "error"}
+	pages := []string{"library", "book", "authors", "author", "audit", "compare", "error", "reader", "info"}
 	s.templates = make(map[string]*template.Template)
 
 	for _, page := range pages {
@@ -95,10 +97,17 @@ func (s *Server) registerRoutes() {
 	// Library views
 	s.mux.HandleFunc("GET /", s.handleLibrary)
 	s.mux.HandleFunc("GET /books/{id}", s.handleBookDetail)
+	s.mux.HandleFunc("GET /books/{id}/read", s.handleBookReader)
+	s.mux.HandleFunc("GET /books/{id}/chapters/{num}", s.handleChapterContent)
+	s.mux.HandleFunc("POST /books/{id}/reassign", s.handleReassignBook)
+	s.mux.HandleFunc("POST /books/{id}/edit", s.handleEditBook)
 
 	// Author views
 	s.mux.HandleFunc("GET /authors", s.handleAuthors)
 	s.mux.HandleFunc("GET /authors/{id}", s.handleAuthorDetail)
+	s.mux.HandleFunc("POST /authors/{id}/rename", s.handleRenameAuthor)
+	s.mux.HandleFunc("POST /authors/{id}/delete", s.handleDeleteAuthor)
+	s.mux.HandleFunc("POST /authors/merge", s.handleMergeAuthors)
 
 	// Audit views
 	s.mux.HandleFunc("GET /audit", s.handleAuditList)
@@ -107,6 +116,9 @@ func (s *Server) registerRoutes() {
 
 	// Compare view
 	s.mux.HandleFunc("GET /compare", s.handleCompare)
+
+	// Info page
+	s.mux.HandleFunc("GET /info", s.handleInfo)
 
 	// API endpoints for Chart.js
 	s.mux.HandleFunc("GET /api/authors/{id}/metrics", s.apiAuthorMetrics)
@@ -161,5 +173,12 @@ func truncateString(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen-3] + "..."
+}
+
+func formatWordsK(n int) string {
+	if n >= 1000 {
+		return fmt.Sprintf("%dk", (n+500)/1000)
+	}
+	return fmt.Sprintf("%d", n)
 }
 

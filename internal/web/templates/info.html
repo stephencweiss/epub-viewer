@@ -1,0 +1,102 @@
+{{define "info"}}
+{{template "base" .}}
+{{end}}
+
+{{define "title"}}Statistics Guide{{end}}
+{{define "content"}}
+<h1>Understanding the Statistics</h1>
+
+<p>This page explains the metrics used throughout the EPUB Reader dashboard.</p>
+
+<article>
+<h2>Word Metrics</h2>
+
+<h3>Total Words</h3>
+<p>The total count of all words in the book, including repeated words. For example, "The cat sat on the mat" contains 6 words.</p>
+
+<h3>Unique Words</h3>
+<p>The count of distinct word forms. Each different spelling counts as a separate word, so "try" and "trying" are counted as two unique words. This is also called the "vocabulary size."</p>
+
+<h3>Vocabulary Richness</h3>
+<p>The ratio of unique words to total words (Unique / Total). A higher value indicates more varied vocabulary. Also known as the <a href="https://en.wikipedia.org/wiki/Type%E2%80%93token_distinction" target="_blank">type-token ratio (TTR)</a>.</p>
+<ul>
+    <li><strong>0.10 - 0.20</strong>: Typical for longer texts (vocabulary naturally repeats)</li>
+    <li><strong>0.20 - 0.40</strong>: Moderately varied vocabulary</li>
+    <li><strong>0.40+</strong>: Very rich vocabulary (often in shorter texts or poetry)</li>
+</ul>
+
+<h3>Hapax Legomena</h3>
+<p>Words that appear exactly once in the text. The term comes from Greek meaning "said only once." A high count of hapax legomena indicates the author uses many rare or unique words. <a href="https://en.wikipedia.org/wiki/Hapax_legomenon" target="_blank">Learn more on Wikipedia</a>.</p>
+
+<h3>Average Word Length</h3>
+<p>The mean number of characters per word. Longer average word length often correlates with more complex or technical writing.</p>
+</article>
+
+<article>
+<h2>Readability Metrics</h2>
+
+<h3>Readability Score (Flesch Reading Ease)</h3>
+<p>A score from 0-100 indicating how easy the text is to read. Higher scores mean easier reading. Based on sentence length and syllables per word. <a href="https://en.wikipedia.org/wiki/Flesch%E2%80%93Kincaid_readability_tests" target="_blank">Learn more on Wikipedia</a>.</p>
+<table>
+    <thead>
+        <tr><th>Score</th><th>Difficulty</th><th>Typical Audience</th></tr>
+    </thead>
+    <tbody>
+        <tr><td>90-100</td><td>Very Easy</td><td>5th grade</td></tr>
+        <tr><td>80-89</td><td>Easy</td><td>6th grade</td></tr>
+        <tr><td>70-79</td><td>Fairly Easy</td><td>7th grade</td></tr>
+        <tr><td>60-69</td><td>Standard</td><td>8th-9th grade</td></tr>
+        <tr><td>50-59</td><td>Fairly Difficult</td><td>10th-12th grade</td></tr>
+        <tr><td>30-49</td><td>Difficult</td><td>College</td></tr>
+        <tr><td>0-29</td><td>Very Difficult</td><td>College graduate</td></tr>
+    </tbody>
+</table>
+
+<h3>Average Sentence Length</h3>
+<p>The mean number of words per sentence. Longer sentences are generally harder to parse and remember.</p>
+<ul>
+    <li><strong>&lt;15 words</strong>: Short, punchy sentences (thriller/action style)</li>
+    <li><strong>15-25 words</strong>: Standard prose</li>
+    <li><strong>&gt;25 words</strong>: Complex, literary style</li>
+</ul>
+
+<h3>Total Syllables / Average Syllables per Word</h3>
+<p>Syllable count is used in readability calculations. More syllables per word typically means more complex vocabulary.</p>
+</article>
+
+<article>
+<h2>Structure Metrics</h2>
+
+<h3>Total Sentences</h3>
+<p>Count of sentences in the book, detected by punctuation (., !, ?).</p>
+
+<h3>Total Paragraphs</h3>
+<p>Count of text blocks separated by blank lines or paragraph breaks.</p>
+
+<h3>Average Paragraph Length</h3>
+<p>Mean number of sentences per paragraph. Shorter paragraphs create faster pacing; longer paragraphs suit detailed exposition.</p>
+</article>
+
+<article>
+<h2>Style Metrics</h2>
+
+<h3>Dialogue Ratio</h3>
+<p>The percentage of text that appears within quotation marks. Higher dialogue ratios indicate more character interaction and conversation.</p>
+<ul>
+    <li><strong>&lt;10%</strong>: Narrative-heavy, descriptive prose</li>
+    <li><strong>10-30%</strong>: Balanced mix of narrative and dialogue</li>
+    <li><strong>&gt;30%</strong>: Dialogue-driven (common in mysteries, thrillers)</li>
+</ul>
+</article>
+
+<article>
+<h2>Corpus Analysis</h2>
+<p>When viewing an author's page, you see aggregated statistics across all their books in your library. These "corpus" metrics help identify an author's overall style:</p>
+<ul>
+    <li><strong>Average Vocabulary Richness</strong>: Mean TTR across books</li>
+    <li><strong>Average Readability</strong>: Mean Flesch score</li>
+    <li><strong>Average Sentence Length</strong>: Typical sentence complexity</li>
+    <li><strong>Average Dialogue Ratio</strong>: How much dialogue they typically use</li>
+</ul>
+</article>
+{{end}}

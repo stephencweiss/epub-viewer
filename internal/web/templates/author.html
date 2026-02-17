@@ -65,4 +65,46 @@
 {{else}}
 <p>No books by this author.</p>
 {{end}}
+
+<details>
+    <summary>Manage Author</summary>
+
+    <article>
+        <h4>Rename Author</h4>
+        <form hx-post="/authors/{{.Author.ID}}/rename" hx-swap="none">
+            <label for="name">New Name</label>
+            <input type="text" name="name" id="name" value="{{.Author.Name}}" required>
+            <button type="submit">Rename</button>
+        </form>
+    </article>
+
+    {{if gt (len .AllAuthors) 1}}
+    <article>
+        <h4>Merge Into Another Author</h4>
+        <p><small>Move all books from this author to another, then delete this author.</small></p>
+        <form hx-post="/authors/merge" hx-swap="none">
+            <input type="hidden" name="source_id" value="{{.Author.ID}}">
+            <label for="target_id">Merge into</label>
+            <select name="target_id" id="target_id" required>
+                {{range .AllAuthors}}
+                {{if ne .ID $.Author.ID}}
+                <option value="{{.ID}}">{{.Name}}</option>
+                {{end}}
+                {{end}}
+            </select>
+            <button type="submit" class="secondary">Merge & Delete This Author</button>
+        </form>
+    </article>
+    {{end}}
+
+    {{if eq .BookCount 0}}
+    <article>
+        <h4>Delete Author</h4>
+        <p><small>This author has no books and can be safely deleted.</small></p>
+        <form hx-post="/authors/{{.Author.ID}}/delete" hx-swap="none" hx-confirm="Are you sure you want to delete this author?">
+            <button type="submit" class="contrast">Delete Author</button>
+        </form>
+    </article>
+    {{end}}
+</details>
 {{end}}

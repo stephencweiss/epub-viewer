@@ -26,7 +26,7 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 		}
 	}
 
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite3", dbPath+"?_foreign_keys=on")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -124,6 +124,25 @@ func (s *SQLiteStore) initSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_decision_audit_book ON decision_audit(book_id);
 	CREATE INDEX IF NOT EXISTS idx_sections_book ON sections(book_id);
 	CREATE INDEX IF NOT EXISTS idx_sections_status ON sections(status);
+
+	CREATE TABLE IF NOT EXISTS beats (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		book_id INTEGER NOT NULL,
+		chapter_id TEXT,
+		sequence INTEGER NOT NULL,
+		word_count INTEGER,
+		summary TEXT NOT NULL,
+		conflict TEXT NOT NULL,
+		choice TEXT NOT NULL,
+		consequence TEXT NOT NULL,
+		perspective_shift TEXT,
+		llm_prompt TEXT,
+		llm_response TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_beats_book ON beats(book_id);
 	`
 
 	_, err := s.db.Exec(schema)
@@ -803,4 +822,225 @@ func (s *SQLiteStore) GetAllowedTextForBook(bookID int64) (string, error) {
 		texts = append(texts, text)
 	}
 	return strings.Join(texts, "\n\n"), rows.Err()
+}
+
+// --- Book/Author Management ---
+
+// ReassignBook moves a book to a different author.
+func (s *SQLiteStore) ReassignBook(bookID, newAuthorID int64) error {
+	// Verify the new author exists
+	_, err := s.GetAuthor(newAuthorID)
+	if err != nil {
+		return err
+	}
+
+	result, err := s.db.Exec("UPDATE books SET author_id = ? WHERE id = ?", newAuthorID, bookID)
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
+// RenameAuthor changes an author's name.
+func (s *SQLiteStore) RenameAuthor(authorID int64, newName string) error {
+	newName = strings.TrimSpace(newName)
+	if newName == "" {
+		return ErrInvalidInput
+	}
+
+	result, err := s.db.Exec("UPDATE authors SET name = ? WHERE id = ?", newName, authorID)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint") {
+			return ErrAlreadyExists
+		}
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
+// MergeAuthors moves all books from source author to target author, then deletes source.
+func (s *SQLiteStore) MergeAuthors(sourceID, targetID int64) error {
+	if sourceID == targetID {
+		return ErrInvalidInput
+	}
+
+	// Verify both authors exist
+	_, err := s.GetAuthor(sourceID)
+	if err != nil {
+		return fmt.Errorf("source author: %w", err)
+	}
+	_, err = s.GetAuthor(targetID)
+	if err != nil {
+		return fmt.Errorf("target author: %w", err)
+	}
+
+	// Move all books from source to target
+	_, err = s.db.Exec("UPDATE books SET author_id = ? WHERE author_id = ?", targetID, sourceID)
+	if err != nil {
+		return err
+	}
+
+	// Delete the source author (now has no books)
+	_, err = s.db.Exec("DELETE FROM authors WHERE id = ?", sourceID)
+	return err
+}
+
+// DeleteAuthor removes an author only if they have no books.
+func (s *SQLiteStore) DeleteAuthor(authorID int64) error {
+	count, err := s.CountBooksByAuthor(authorID)
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return ErrAuthorHasBooks
+	}
+
+	result, err := s.db.Exec("DELETE FROM authors WHERE id = ?", authorID)
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
+// CountBooksByAuthor returns the number of books by an author.
+func (s *SQLiteStore) CountBooksByAuthor(authorID int64) (int, error) {
+	var count int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM books WHERE author_id = ?", authorID).Scan(&count)
+	return count, err
+}
+
+// UpdateBook updates a book's metadata fields.
+func (s *SQLiteStore) UpdateBook(bookID int64, title, language, publisher string) error {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return ErrInvalidInput
+	}
+
+	result, err := s.db.Exec(
+		"UPDATE books SET title = ?, language = ?, publisher = ? WHERE id = ?",
+		title, language, publisher, bookID,
+	)
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
+// --- Beats ---
+
+// SaveBeat stores a narrative beat for a book.
+func (s *SQLiteStore) SaveBeat(beat *Beat) error {
+	result, err := s.db.Exec(`
+		INSERT INTO beats (book_id, chapter_id, sequence, word_count, summary, conflict, choice, consequence, perspective_shift, llm_prompt, llm_response)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, beat.BookID, beat.ChapterID, beat.Sequence, beat.WordCount, beat.Summary, beat.Conflict, beat.Choice, beat.Consequence, beat.PerspectiveShift, beat.LLMPrompt, beat.LLMResponse)
+
+	if err != nil {
+		return err
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return err
+	}
+	beat.ID = id
+	return nil
+}
+
+// GetBeat retrieves a beat by ID.
+func (s *SQLiteStore) GetBeat(id int64) (*Beat, error) {
+	var b Beat
+	err := s.db.QueryRow(`
+		SELECT id, book_id, chapter_id, sequence, word_count, summary, conflict, choice, consequence, perspective_shift, llm_prompt, llm_response, created_at
+		FROM beats WHERE id = ?
+	`, id).Scan(&b.ID, &b.BookID, &b.ChapterID, &b.Sequence, &b.WordCount, &b.Summary, &b.Conflict, &b.Choice, &b.Consequence, &b.PerspectiveShift, &b.LLMPrompt, &b.LLMResponse, &b.CreatedAt)
+
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &b, nil
+}
+
+// ListBeatsByBook returns all beats for a book in sequence order.
+func (s *SQLiteStore) ListBeatsByBook(bookID int64) ([]Beat, error) {
+	rows, err := s.db.Query(`
+		SELECT id, book_id, chapter_id, sequence, word_count, summary, conflict, choice, consequence, perspective_shift, llm_prompt, llm_response, created_at
+		FROM beats WHERE book_id = ? ORDER BY sequence
+	`, bookID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var beats []Beat
+	for rows.Next() {
+		var b Beat
+		if err := rows.Scan(&b.ID, &b.BookID, &b.ChapterID, &b.Sequence, &b.WordCount, &b.Summary, &b.Conflict, &b.Choice, &b.Consequence, &b.PerspectiveShift, &b.LLMPrompt, &b.LLMResponse, &b.CreatedAt); err != nil {
+			return nil, err
+		}
+		beats = append(beats, b)
+	}
+	return beats, rows.Err()
+}
+
+// DeleteBeatsByBook removes all beats for a book.
+func (s *SQLiteStore) DeleteBeatsByBook(bookID int64) error {
+	_, err := s.db.Exec("DELETE FROM beats WHERE book_id = ?", bookID)
+	return err
+}
+
+// HasBeats returns true if the book has any beats analyzed.
+func (s *SQLiteStore) HasBeats(bookID int64) (bool, error) {
+	var count int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM beats WHERE book_id = ?", bookID).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// CountBeatsByBook returns the number of beats for a book.
+func (s *SQLiteStore) CountBeatsByBook(bookID int64) (int, error) {
+	var count int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM beats WHERE book_id = ?", bookID).Scan(&count)
+	return count, err
 }

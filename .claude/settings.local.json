@@ -7,7 +7,8 @@
       "Bash(mkdir:*)",
       "Bash(curl:*)",
       "Bash(cat:*)",
-      "Bash(lsof:*)"
+      "Bash(lsof:*)",
+      "Bash(xargs kill)"
     ]
   }
 }
